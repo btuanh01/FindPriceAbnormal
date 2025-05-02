@@ -1,0 +1,16 @@
+{
+  "updateInterval": 60000,
+  "decisionInterval": 60000,
+  "deviationThreshold": 0.001,
+  "assets": [
+    "USDT"
+  ],
+  "fiatCurrency": "VND",
+  "countries": [
+    "VN"
+  ],
+  "paymentMethods": [
+    "BANK",
+    "BankTransferVietnam"
+  ]
+}

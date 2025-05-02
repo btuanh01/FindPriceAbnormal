@@ -1,0 +1,43 @@
+## Project: Binance P2P Anomaly Detector Web Dashboard
+
+**Goal:**
+- Build a lightweight Web Dashboard that:
+  - Repeatedly fetches Spot prices of USDT/BTC/ETH from Binance Exchange.
+  - Simultaneously fetches P2P advertisements (Buy/Sell) from Binance P2P API.
+  - Calculates percentage difference between P2P price and Spot price.
+  - Detects anomalies based on a configurable threshold (e.g., ±0.5%).
+  - Displays detected anomalies in a clean, real-time updating dashboard.
+  - No Telegram or external alerts needed; focus on clear dashboard display only.
+
+**Backend (Node.js or Python):**
+- Task scheduler (e.g., every 5 seconds):
+  - Fetch Spot price: `GET https://api.binance.com/api/v3/ticker/price`
+  - Fetch P2P ads: `POST https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search`
+- Analyze:
+  - Calculate % deviation = (P2P price – Spot price) / Spot price × 100%
+  - If deviation exceeds threshold → mark as "Anomaly".
+
+**Frontend (React or simple HTML+JS):**
+- Display table with columns:
+  - Merchant Name
+  - Order Count
+  - Completion Rate
+  - Trade Type (Buy/Sell)
+  - P2P Price
+  - Spot Price
+  - % Deviation
+  - Timestamp
+- Color-code anomalies:
+  - Green for good buying opportunity (Sell price much lower).
+  - Red for good selling opportunity (Buy price much higher).
+- Auto-refresh the table as new data arrives (preferably using WebSocket or periodic polling).
+
+**Extra Features (Optional):**
+- Configurable threshold (input field to set % deviation trigger).
+- Filter by payment method or fiat currency.
+- Sort anomalies by severity of % deviation.
+
+**Important Notes:**
+- Prioritize real-time responsiveness and lightweight design.
+- Ensure API call frequency respects Binance limits (no abuse).
+- Use simple and efficient technology stack (minimal dependencies).

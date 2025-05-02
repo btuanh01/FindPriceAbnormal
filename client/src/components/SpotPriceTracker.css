@@ -1,0 +1,64 @@
+.spot-price-tracker {
+  margin-bottom: 2rem;
+}
+
+.spot-price-tracker .card {
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.spot-price-tracker .card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 1rem;
+}
+
+.spot-price-tracker .current-price {
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 0.5rem;
+}
+
+.spot-price-tracker .price-change {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.spot-price-tracker .gecko-terminal-chart {
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.spot-price-tracker .price-history {
+  margin-top: 1rem;
+}
+
+.spot-price-tracker .table {
+  margin-bottom: 0;
+}
+
+.spot-price-tracker .table th {
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.spot-price-tracker .table td {
+  vertical-align: middle;
+}
+
+.spot-price-tracker .text-success {
+  color: #28a745 !important;
+}
+
+.spot-price-tracker .text-danger {
+  color: #dc3545 !important;
+}
+
+.spot-price-tracker .text-muted {
+  color: #6c757d !important;
+}
+
+.spot-price-tracker .bi {
+  font-size: 1.1em;
+} 

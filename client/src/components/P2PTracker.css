@@ -1,0 +1,141 @@
+.p2p-tracker {
+  margin-bottom: 2rem;
+}
+
+.p2p-tracker .card {
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.p2p-tracker .card-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dee2e6;
+  padding: 1rem;
+}
+
+.p2p-tracker .p2p-table {
+  margin-bottom: 0;
+}
+
+.p2p-tracker .p2p-table th {
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
+}
+
+.p2p-tracker .p2p-table td {
+  vertical-align: middle;
+}
+
+.p2p-tracker .merchant-info {
+  display: flex;
+  align-items: center;
+}
+
+.p2p-tracker .merchant-name {
+  font-weight: 500;
+}
+
+.p2p-tracker .price-cell {
+  font-weight: 500;
+}
+
+.p2p-tracker .completion-info {
+  display: flex;
+  align-items: baseline;
+}
+
+.p2p-tracker .table-success {
+  background-color: rgba(40, 167, 69, 0.1) !important;
+}
+
+.p2p-tracker .table-danger {
+  background-color: rgba(220, 53, 69, 0.1) !important;
+}
+
+.p2p-tracker .badge {
+  font-weight: 500;
+}
+
+.p2p-tracker .btn-group {
+  gap: 0.5rem;
+}
+
+.p2p-tracker .btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.p2p-tracker .bi {
+  font-size: 1.1em;
+}
+
+/* Price History Styles */
+.price-history-container {
+  background-color: #f8f9fa;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.price-history-card {
+  transition: all 0.3s ease;
+}
+
+.price-history-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.price-history-table th {
+  background-color: #f8f9fa;
+  font-size: 0.9rem;
+}
+
+.price-history-table td {
+  font-size: 0.9rem;
+}
+
+.price-history-table .price-cell {
+  font-weight: 500;
+  color: #212529;
+}
+
+.deviation-value {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.deviation-value.text-success {
+  color: #28a745 !important;
+}
+
+.deviation-value.text-danger {
+  color: #dc3545 !important;
+}
+
+.history-tabs .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  color: #495057;
+  font-weight: 500;
+}
+
+.history-tabs .nav-link.active {
+  color: #0d6efd;
+  background-color: #fff;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.history-tabs .nav-link:hover:not(.active) {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.no-data {
+  padding: 1rem;
+  color: #6c757d;
+  text-align: center;
+} 
