@@ -1,7 +1,8 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
-const http = require('http');
 const cors = require('cors');
-const { Server } = require('socket.io');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -14,31 +15,14 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Create HTTP server
-const server = http.createServer(app);
-
-// Initialize Socket.io
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
-
-// Store for latest data
-let latestData = {
-  anomalies: [],
-  lastUpdate: null
-};
-
 // Store for latest market decision
 let latestDecision = {
   decision: 'HOLD',
   confidence: 'LOW',
   reason: 'Đang khởi động...',
   metrics: {
-    avgDeviation: null,
-    spotTrend: null,
+    avgBuyPrice: null,
+    avgSellPrice: null,
     liquidity: null,
     spread: null,
     merchantHealth: null
@@ -46,182 +30,23 @@ let latestDecision = {
   timestamp: new Date().toISOString()
 };
 
-// Configuration
+// Configuration using environment variables
 const CONFIG = {
-  updateInterval: 60000, // 1 minute
-  decisionInterval: 60000, // 1 minute
-  deviationThreshold: 0.5, // Default to 0.5% - balanced
-  assets: ['USDT'],
-  fiatCurrency: 'VND',
-  countries: ['VN'], // Vietnam
-  paymentMethods: ['BANK', 'BankTransferVietnam'] // Specific bank transfer methods
+  updateInterval: parseInt(process.env.UPDATE_INTERVAL) || 60000, // 1 minute
+  decisionInterval: parseInt(process.env.DECISION_INTERVAL) || 60000, // 1 minute
+  deviationThreshold: parseFloat(process.env.DEVIATION_THRESHOLD) || 0.5, // Default to 0.5% - balanced
+  assets: [process.env.DEFAULT_ASSET || 'USDT'],
+  fiatCurrency: process.env.DEFAULT_FIAT || 'VND',
+  countries: [process.env.DEFAULT_COUNTRIES || 'VN'], // Vietnam
+  paymentMethods: (process.env.DEFAULT_PAYMENT_METHODS || 'BANK,BankTransferVietnam').split(',') // Specific bank transfer methods
 };
 
-// Add cache and rate limiting protection
-const API_CACHE = {
-  coingecko: {
-    lastFetch: 0,
-    data: null,
-    retryDelay: 5000, // Start with 5 seconds
-    maxRetryDelay: 60000 // Max 1 minute
-  },
-  bitcoin: {
-    lastFetch: 0,
-    data: null,
-    retryDelay: 5000,
-    maxRetryDelay: 300000
-  }
+// API Configuration
+const API_CONFIG = {
+  binanceApiUrl: process.env.BINANCE_API_URL || 'https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search',
+  timeout: parseInt(process.env.API_TIMEOUT) || 10000,
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 };
-
-// Function to fetch Spot price from CoinGecko with rate limiting protection
-async function fetchSpotPrice(asset) {
-  try {
-    if (asset === 'USDT') {
-      // For USDT in VND, we'll use multiple sources with fallbacks
-      console.log('Fetching USDT price in VND');
-      
-      // First try using currency exchange APIs (more reliable, higher limits)
-      
-      // If primary source fails, try CoinGecko with backoff
-      const now = Date.now();
-      const timeSinceLastFetch = now - API_CACHE.coingecko.lastFetch;
-      
-      // Only try CoinGecko if we haven't hit rate limits recently
-      if (timeSinceLastFetch > API_CACHE.coingecko.retryDelay) {
-        try {
-          console.log('Trying CoinGecko for USDT price...');
-          const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=vnd&include_24hr_change=true');
-          
-          if (response.data && response.data.tether && response.data.tether.vnd) {
-            const usdtVnd = response.data.tether.vnd;
-            
-            // Update cache and reset backoff on success
-            API_CACHE.coingecko.data = response.data;
-            API_CACHE.coingecko.lastFetch = now;
-            API_CACHE.coingecko.retryDelay = 5000;
-            
-            console.log(`Got USDT price from CoinGecko: ${usdtVnd} VND per USDT`);
-            return usdtVnd;
-          } else {
-            throw new Error('Invalid response from CoinGecko');
-          }
-        } catch (geckoErr) {
-          console.log('Error getting price from CoinGecko:', geckoErr.message);
-          
-          // If we got a 429 error, increase backoff
-          if (geckoErr.message && (geckoErr.message.includes('429') || 
-              (geckoErr.response && geckoErr.response.status === 429))) {
-            API_CACHE.coingecko.retryDelay = Math.min(
-              API_CACHE.coingecko.retryDelay * 2,
-              API_CACHE.coingecko.maxRetryDelay
-            );
-            console.log(`Increased CoinGecko backoff to ${API_CACHE.coingecko.retryDelay}ms`);
-          }
-          
-          // Use cached data if available
-          if (API_CACHE.coingecko.data && API_CACHE.coingecko.data.tether) {
-            const cachedPrice = API_CACHE.coingecko.data.tether.vnd;
-            console.log(`Using cached CoinGecko price: ${cachedPrice} VND`);
-            return cachedPrice;
-          }
-        }
-      } else {
-        // Use cached data during backoff period
-        if (API_CACHE.coingecko.data && API_CACHE.coingecko.data.tether) {
-          const cachedPrice = API_CACHE.coingecko.data.tether.vnd;
-          console.log(`Using cached data during backoff (${Math.round((API_CACHE.coingecko.retryDelay - timeSinceLastFetch)/1000)}s remaining): ${cachedPrice} VND`);
-          return cachedPrice;
-        }
-        console.log(`Skipping CoinGecko request - in backoff period (${Math.round((API_CACHE.coingecko.retryDelay - timeSinceLastFetch)/1000)}s remaining)`);
-      }
-      
-      // Fallback option: Use a dynamic algorithm based on time
-      console.log('Using algorithmic estimation for USDT price');
-      const currentTime = new Date();
-      const variation = (Math.sin(currentTime.getTime() / 86400000) * 500) + 24500;
-      return parseFloat(variation.toFixed(0));
-    } else {
-      // For other assets, try multiple sources with fallbacks
-      // First try CoinGecko with backoff
-      const coinId = getCoinGeckoId(asset);
-      const now = Date.now();
-      const timeSinceLastFetch = now - API_CACHE.coingecko.lastFetch;
-      
-      if (timeSinceLastFetch > API_CACHE.coingecko.retryDelay) {
-        try {
-          console.log(`Fetching price for ${asset} (${coinId}) from CoinGecko`);
-          const response = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
-          
-          if (response.data && response.data[coinId] && response.data[coinId].usd) {
-            const price = response.data[coinId].usd;
-            
-            // Update cache on success
-            if (!API_CACHE.coingecko.data) API_CACHE.coingecko.data = {};
-            API_CACHE.coingecko.data[coinId] = { usd: price };
-            API_CACHE.coingecko.lastFetch = now;
-            API_CACHE.coingecko.retryDelay = 5000;
-            
-            console.log(`Received price for ${asset}: ${price} USDT`);
-            return price;
-          } else {
-            throw new Error(`Could not get price for ${asset} from CoinGecko`);
-          }
-        } catch (error) {
-          console.error(`Error fetching via CoinGecko:`, error.message);
-          
-          // Increase backoff on rate limit
-          if (error.message && (error.message.includes('429') || 
-              (error.response && error.response.status === 429))) {
-            API_CACHE.coingecko.retryDelay = Math.min(
-              API_CACHE.coingecko.retryDelay * 2,
-              API_CACHE.coingecko.maxRetryDelay
-            );
-            console.log(`Increased CoinGecko backoff to ${API_CACHE.coingecko.retryDelay}ms`);
-          }
-          
-          // Try using cached data
-          if (API_CACHE.coingecko.data && API_CACHE.coingecko.data[coinId]) {
-            console.log(`Using cached price for ${asset}: ${API_CACHE.coingecko.data[coinId].usd} USDT`);
-            return API_CACHE.coingecko.data[coinId].usd;
-          }
-        }
-      } else if (API_CACHE.coingecko.data && API_CACHE.coingecko.data[coinId]) {
-        // Use cached data during backoff
-        console.log(`Using cached price for ${asset} during backoff: ${API_CACHE.coingecko.data[coinId].usd} USDT`);
-        return API_CACHE.coingecko.data[coinId].usd;
-      }
-      
-      // Fallback: Try Binance API directly
-      try {
-        const symbol = `${asset}USDT`;
-        console.log(`Fetching spot price from Binance for ${symbol}`);
-        const response = await axios.get(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
-        console.log(`Received price from Binance for ${symbol}:`, response.data.price);
-        return parseFloat(response.data.price);
-      } catch (error) {
-        console.error(`Error fetching from Binance:`, error.message);
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`Error in fetchSpotPrice for ${asset}:`, error.message);
-    return null;
-  }
-}
-
-// Helper function to map asset symbols to CoinGecko IDs
-function getCoinGeckoId(asset) {
-  const mapping = {
-    'USDT': 'tether',
-    'BTC': 'bitcoin',
-    'ETH': 'ethereum',
-    'BNB': 'binancecoin',
-    // Add more as needed
-  };
-  
-  return mapping[asset] || asset.toLowerCase();
-}
 
 // Function to fetch P2P advertisements
 async function fetchP2PAdvertisements(asset, tradeType) {
@@ -245,13 +70,14 @@ async function fetchP2PAdvertisements(asset, tradeType) {
     console.log('P2P API request payload (with specific payment methods):', JSON.stringify(payload));
     
     let response = await axios.post(
-      'https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', 
+      API_CONFIG.binanceApiUrl, 
       payload,
       {
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
       }
     );
 
@@ -278,13 +104,14 @@ async function fetchP2PAdvertisements(asset, tradeType) {
       console.log('P2P API request payload (all payment methods):', JSON.stringify(payload));
       
       response = await axios.post(
-        'https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', 
+        API_CONFIG.binanceApiUrl, 
         payload,
         {
           headers: {
             'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
+            'User-Agent': API_CONFIG.userAgent
+          },
+          timeout: API_CONFIG.timeout
         }
       );
       
@@ -324,254 +151,6 @@ async function fetchP2PAdvertisements(asset, tradeType) {
   }
 }
 
-// Function to detect anomalies
-async function detectAnomalies() {
-  const anomalies = [];
-  const timestamp = new Date().toISOString();
-  console.log(`\n[${timestamp}] Starting anomaly detection`);
-
-  // Process each asset (USDT only now)
-  for (const asset of CONFIG.assets) {
-    console.log(`Processing ${asset}`);
-    const spotPrice = await fetchSpotPrice(asset);
-    if (!spotPrice) {
-      console.error(`No spot price available for ${asset}, skipping`);
-      continue;
-    }
-
-    // Check both BUY and SELL advertisements
-    for (const tradeType of ['BUY', 'SELL']) {
-      const ads = await fetchP2PAdvertisements(asset, tradeType);
-      
-      if (!ads || ads.length === 0) {
-        console.log(`No ${tradeType} ads found for ${asset}`);
-        continue;
-      }
-
-      console.log(`Processing ${ads.length} ${tradeType} ads for ${asset}`);
-      
-      // Filter for specific payment methods (BANK, BankTransferVietnam)
-      const targetPaymentMethods = CONFIG.paymentMethods;
-      
-      for (const ad of ads) {
-        try {
-          // Check if the ad has the target payment methods
-          let hasTargetPaymentMethod = false;
-          
-          if (ad.adv.tradeMethods) {
-            for (const method of ad.adv.tradeMethods) {
-              if (targetPaymentMethods.includes(method.identifier)) {
-                hasTargetPaymentMethod = true;
-                console.log(`Found ad with payment method: ${method.identifier}`);
-                break;
-              }
-            }
-          }
-          
-          if (hasTargetPaymentMethod) {
-            const p2pPrice = parseFloat(ad.adv.price);
-            const deviation = ((p2pPrice - spotPrice) / spotPrice) * 100;
-            console.log(`${asset} ${tradeType} ad price: ${p2pPrice}, spot: ${spotPrice}, deviation: ${deviation.toFixed(2)}%`);
-            
-            // Determine recommended action based on trade type and price deviation
-            let recommendedAction = "NO ACTION";
-            
-            // Logic for determining BUY NOW or SELL NOW
-            // Convert threshold to percentage points for direct comparison with deviation
-            const thresholdPercentage = CONFIG.deviationThreshold;
-
-            if (tradeType === "SELL" && deviation < -thresholdPercentage) {
-              recommendedAction = "MUA NGAY";
-              console.log(`Recommending BUY NOW for ${tradeType} ad by ${ad.advertiser.nickName} - good deal to buy`);
-            } else if (tradeType === "BUY" && deviation > thresholdPercentage) {
-              recommendedAction = "BÁN NGAY";
-              console.log(`Recommending SELL NOW for ${tradeType} ad by ${ad.advertiser.nickName} - good deal to sell`);
-            }
-            
-            // If deviation exceeds threshold (positive or negative), mark as anomaly
-            if (Math.abs(deviation) >= CONFIG.deviationThreshold) {
-              console.log(`Anomaly detected: ${deviation.toFixed(2)}% deviation for ${tradeType} ad by ${ad.advertiser.nickName}`);
-              console.log(`Recommended action: ${recommendedAction}`);
-              anomalies.push({
-                merchantName: ad.advertiser.nickName,
-                orderCount: ad.advertiser.monthOrderCount,
-                completionRate: ad.advertiser.monthFinishRate,
-                tradeType,
-                asset,
-                p2pPrice,
-                spotPrice,
-                deviation,
-                recommendedAction,
-                timestamp,
-                paymentMethods: ad.adv.tradeMethods?.map(m => m.identifier) || [],
-                adId: ad.adv.advNo,
-                advertiserId: ad.advertiser.userNo
-              });
-            }
-          }
-        } catch (error) {
-          console.error('Error processing ad:', error);
-          console.error('Problematic ad:', JSON.stringify(ad, null, 2));
-        }
-      }
-    }
-  }
-
-  console.log(`[${timestamp}] Detected ${anomalies.length} anomalies`);
-  return { anomalies, timestamp };
-}
-
-// Function to fetch USDT price with trend information
-async function fetchUsdtPriceWithTrend() {
-  try {
-    // First try our primary sources with caching
-    let price = null;
-    let trend = 'NEUTRAL';
-    let change24h = 0;
-    
-    // Check if we can use Binance first (higher rate limits)
-    try {
-      // Get USDT/BUSD rate to account for any depeg
-      const usdtResponse = await axios.get('https://api.binance.com/api/v3/ticker/price?symbol=USDTBUSD');
-      const usdtBusdRate = parseFloat(usdtResponse.data.price);
-      
-      // Get USD to VND exchange rate
-      const rateResponse = await axios.get('https://open.er-api.com/v6/latest/USD');
-      
-      if (rateResponse.data && rateResponse.data.rates && rateResponse.data.rates.VND) {
-        price = rateResponse.data.rates.VND * usdtBusdRate;
-        
-        // Get 24h change stats for USDT (via BTC/USDT change as proxy)
-        const btcStats = await axios.get('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');
-        if (btcStats.data && btcStats.data.priceChangePercent) {
-          // Inverse of BTC/USDT change is roughly USDT strength
-          change24h = -1 * parseFloat(btcStats.data.priceChangePercent) * 0.1; // Dampened effect
-          
-          if (change24h > 0.5) trend = 'UP';
-          else if (change24h < -0.5) trend = 'DOWN';
-          else trend = 'NEUTRAL';
-          
-          console.log(`Using Binance for USDT trend data: ${trend} (${change24h.toFixed(2)}%)`);
-        }
-      }
-    } catch (err) {
-      console.log('Primary source failed for trend data, trying CoinGecko');
-    }
-    
-    // If primary source fails, try CoinGecko with backoff
-    if (!price) {
-      const now = Date.now();
-      const timeSinceLastFetch = now - API_CACHE.coingecko.lastFetch;
-      
-      // Only try CoinGecko if we haven't hit rate limits recently
-      if (timeSinceLastFetch > API_CACHE.coingecko.retryDelay) {
-        try {
-          console.log('Trying CoinGecko for USDT price with trend data...');
-          const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=vnd&include_24hr_change=true');
-          
-          if (response.data && response.data.tether && response.data.tether.vnd) {
-            price = response.data.tether.vnd;
-            
-            // Get trend from 24h price change
-            if (response.data.tether.vnd_24h_change !== undefined) {
-              change24h = response.data.tether.vnd_24h_change;
-              
-              if (change24h > 0.5) trend = 'UP';
-              else if (change24h < -0.5) trend = 'DOWN';
-              else trend = 'NEUTRAL';
-            }
-            
-            // Update cache and reset backoff on success
-            API_CACHE.coingecko.data = response.data;
-            API_CACHE.coingecko.lastFetch = now;
-            API_CACHE.coingecko.retryDelay = 5000;
-            
-            console.log(`Got USDT price from CoinGecko: ${price} VND (${trend}, ${change24h.toFixed(2)}%)`);
-          } else {
-            throw new Error('Invalid response from CoinGecko');
-          }
-        } catch (geckoErr) {
-          console.log('Error getting price from CoinGecko:', geckoErr.message);
-          
-          // If we got a 429 error, increase backoff
-          if (geckoErr.message && (geckoErr.message.includes('429') || 
-              (geckoErr.response && geckoErr.response.status === 429))) {
-            API_CACHE.coingecko.retryDelay = Math.min(
-              API_CACHE.coingecko.retryDelay * 2,
-              API_CACHE.coingecko.maxRetryDelay
-            );
-            console.log(`Increased CoinGecko backoff to ${API_CACHE.coingecko.retryDelay}ms`);
-          }
-          
-          // Use cached data if available
-          if (API_CACHE.coingecko.data && API_CACHE.coingecko.data.tether) {
-            price = API_CACHE.coingecko.data.tether.vnd;
-            
-            // Use cached trend if available
-            if (API_CACHE.coingecko.data.tether.vnd_24h_change !== undefined) {
-              change24h = API_CACHE.coingecko.data.tether.vnd_24h_change;
-              
-              if (change24h > 0.5) trend = 'UP';
-              else if (change24h < -0.5) trend = 'DOWN';
-              else trend = 'NEUTRAL';
-              
-              console.log(`Using cached CoinGecko trend: ${trend} (${change24h.toFixed(2)}%)`);
-            }
-            
-            console.log(`Using cached CoinGecko price: ${price} VND`);
-          }
-        }
-      } else if (API_CACHE.coingecko.data && API_CACHE.coingecko.data.tether) {
-        // Use cached data during backoff period
-        price = API_CACHE.coingecko.data.tether.vnd;
-        
-        // Use cached trend if available
-        if (API_CACHE.coingecko.data.tether.vnd_24h_change !== undefined) {
-          change24h = API_CACHE.coingecko.data.tether.vnd_24h_change;
-          
-          if (change24h > 0.5) trend = 'UP';
-          else if (change24h < -0.5) trend = 'DOWN';
-          else trend = 'NEUTRAL';
-        }
-        
-        console.log(`Using cached data during backoff (${Math.round((API_CACHE.coingecko.retryDelay - timeSinceLastFetch)/1000)}s remaining): ${price} VND (${trend})`);
-      } else {
-        console.log(`Skipping CoinGecko request - in backoff period (${Math.round((API_CACHE.coingecko.retryDelay - timeSinceLastFetch)/1000)}s remaining)`);
-      }
-    }
-    
-    // Fallback: Use a dynamic algorithm if all else fails
-    if (!price) {
-      console.log('Using algorithmic estimation for USDT price and trend');
-      const currentTime = new Date();
-      price = (Math.sin(currentTime.getTime() / 86400000) * 500) + 24500;
-      
-      // Generate a pseudo-random trend based on the minute of the hour
-      const minute = currentTime.getMinutes();
-      if (minute % 3 === 0) trend = 'UP';
-      else if (minute % 3 === 1) trend = 'DOWN';
-      else trend = 'NEUTRAL';
-      
-      change24h = (trend === 'UP') ? 0.8 : (trend === 'DOWN' ? -0.8 : 0.1);
-    }
-    
-    return { 
-      price: parseFloat(price.toFixed(0)), 
-      trend, 
-      change24h: parseFloat(change24h.toFixed(2)) 
-    };
-  } catch (error) {
-    console.error('Error in fetchUsdtPriceWithTrend:', error.message);
-    
-    // Ultimate fallback
-    return { 
-      price: 24500, 
-      trend: 'NEUTRAL', 
-      change24h: 0 
-    };
-  }
-}
-
 // Function to analyze market data and generate strategic recommendations
 async function generateMarketDecision() {
   console.log('Generating market decision...');
@@ -579,25 +158,7 @@ async function generateMarketDecision() {
   
   try {
     // 1. Fetch data for analysis
-    const asset = 'USDT';
-    const spotData = await fetchUsdtPriceWithTrend();
-    const spotPrice = spotData.price;
-    
-    if (!spotPrice) {
-      return {
-        decision: 'HOLD',
-        confidence: 'LOW',
-        reason: 'Không thể lấy giá Spot',
-        metrics: {
-          avgDeviation: null,
-          spotTrend: null,
-          liquidity: null,
-          spread: null,
-          merchantHealth: null
-        },
-        timestamp
-      };
-    }
+    const asset = CONFIG.assets[0]; // Use the first asset from config
     
     // Fetch both BUY and SELL advertisements
     const buyAds = await fetchP2PAdvertisements(asset, 'BUY');
@@ -609,8 +170,8 @@ async function generateMarketDecision() {
         confidence: 'LOW',
         reason: 'Không đủ dữ liệu P2P',
         metrics: {
-          avgDeviation: null,
-          spotTrend: null,
+          avgBuyPrice: null,
+          avgSellPrice: null,
           liquidity: null,
           spread: null,
           merchantHealth: null
@@ -621,9 +182,9 @@ async function generateMarketDecision() {
     
     // 2. Calculate metrics for analysis
     
-    // 2.1 Calculate average deviation
-    let totalBuyDeviation = 0;
-    let totalSellDeviation = 0;
+    // 2.1 Calculate average prices
+    let totalBuyPrice = 0;
+    let totalSellPrice = 0;
     let totalBuyVolume = 0;
     let totalSellVolume = 0;
     let reliableMerchants = 0;
@@ -632,10 +193,9 @@ async function generateMarketDecision() {
     // Process BUY ads (people buying USDT)
     for (const ad of buyAds) {
       const p2pPrice = parseFloat(ad.adv.price);
-      const deviation = ((p2pPrice - spotPrice) / spotPrice) * 100;
       const availableAmount = parseFloat(ad.adv.maxSingleTransAmount);
       
-      totalBuyDeviation += deviation;
+      totalBuyPrice += p2pPrice;
       totalBuyVolume += availableAmount;
       
       // Count reliable merchants (completion rate > 98%)
@@ -647,10 +207,9 @@ async function generateMarketDecision() {
     // Process SELL ads (people selling USDT)
     for (const ad of sellAds) {
       const p2pPrice = parseFloat(ad.adv.price);
-      const deviation = ((p2pPrice - spotPrice) / spotPrice) * 100;
       const availableAmount = parseFloat(ad.adv.maxSingleTransAmount);
       
-      totalSellDeviation += deviation;
+      totalSellPrice += p2pPrice;
       totalSellVolume += availableAmount;
       
       // Count reliable merchants (completion rate > 98%)
@@ -660,57 +219,49 @@ async function generateMarketDecision() {
     }
     
     // Calculate averages
-    const avgBuyDeviation = totalBuyDeviation / buyAds.length;
-    const avgSellDeviation = totalSellDeviation / sellAds.length;
-    const avgDeviation = (avgBuyDeviation + avgSellDeviation) / 2;
+    const avgBuyPrice = totalBuyPrice / buyAds.length;
+    const avgSellPrice = totalSellPrice / sellAds.length;
     const totalLiquidity = totalBuyVolume + totalSellVolume;
     
     // 2.2 Calculate market spread
     // Get the lowest sell price and highest buy price
     const lowestSellPrice = Math.min(...sellAds.map(ad => parseFloat(ad.adv.price)));
     const highestBuyPrice = Math.max(...buyAds.map(ad => parseFloat(ad.adv.price)));
-    const spread = ((lowestSellPrice - highestBuyPrice) / spotPrice) * 100;
+    const spread = ((lowestSellPrice - highestBuyPrice) / avgBuyPrice) * 100;
     
     // 2.3 Calculate merchant health score
     const merchantHealthScore = (reliableMerchants / totalMerchants) * 100;
-    
-    // 2.4 Determine spot trend (stub for now - would need historical data)
-    // In a real implementation, you would compare current spot with previous values
-    // For now, we'll use a placeholder (neutral)
-    const spotTrend = spotData.trend;
     
     // 3. Make decision based on metrics
     let decision = 'HOLD';
     let confidence = 'MEDIUM';
     let reason = '';
     
-    // Significant deviations indicating strong market opportunities
-    const significantDeviation = 0.5; // 0.5%
+    // Significant price difference indicating market opportunities
+    const priceSpreadThreshold = CONFIG.deviationThreshold; // Use config threshold
     
-    // BUY USDT recommendation
-    if (avgSellDeviation < -significantDeviation && 
+    // BUY USDT recommendation (if sell prices are low relative to buy prices)
+    if (avgSellPrice < avgBuyPrice * 0.995 && 
         totalSellVolume > 5000 && 
-        (spotTrend === 'UP' || spotTrend === 'NEUTRAL') && 
-        Math.abs(spread) > 0.5) {
+        Math.abs(spread) > priceSpreadThreshold) {
       
       decision = 'BUY';
-      confidence = Math.abs(avgSellDeviation) > 1.0 ? 'HIGH' : 'MEDIUM';
-      reason = 'Giá bán USDT thấp hơn giá Spot đáng kể';
+      confidence = (avgBuyPrice - avgSellPrice) / avgBuyPrice > 0.01 ? 'HIGH' : 'MEDIUM';
+      reason = 'Giá bán USDT thấp hơn giá mua đáng kể';
     }
-    // SELL USDT recommendation
-    else if (avgBuyDeviation > significantDeviation && 
+    // SELL USDT recommendation (if buy prices are high relative to sell prices)
+    else if (avgBuyPrice > avgSellPrice * 1.005 && 
              totalBuyVolume > 5000 && 
-             (spotTrend === 'DOWN' || spotTrend === 'NEUTRAL') && 
-             Math.abs(spread) > 0.5) {
+             Math.abs(spread) > priceSpreadThreshold) {
       
       decision = 'SELL';
-      confidence = avgBuyDeviation > 1.0 ? 'HIGH' : 'MEDIUM';
-      reason = 'Giá mua USDT cao hơn giá Spot đáng kể';
+      confidence = (avgBuyPrice - avgSellPrice) / avgSellPrice > 0.01 ? 'HIGH' : 'MEDIUM';
+      reason = 'Giá mua USDT cao hơn giá bán đáng kể';
     }
     // HOLD recommendation
     else {
       decision = 'HOLD';
-      if (Math.abs(avgDeviation) < 0.2) {
+      if (Math.abs(avgBuyPrice - avgSellPrice) / avgBuyPrice < 0.002) {
         reason = 'Thị trường ổn định, không có cơ hội rõ ràng';
         confidence = 'HIGH';
       } else if (totalLiquidity < 5000) {
@@ -728,11 +279,9 @@ async function generateMarketDecision() {
       confidence,
       reason,
       metrics: {
-        avgBuyDeviation: avgBuyDeviation.toFixed(2) + '%',
-        avgSellDeviation: avgSellDeviation.toFixed(2) + '%',
-        avgDeviation: avgDeviation.toFixed(2) + '%',
-        spotPrice: formatPrice(spotPrice),
-        spotTrend,
+        avgBuyPrice: formatPrice(avgBuyPrice),
+        avgSellPrice: formatPrice(avgSellPrice),
+        priceSpread: ((avgBuyPrice - avgSellPrice) / avgBuyPrice * 100).toFixed(2) + '%',
         liquidity: formatPrice(totalLiquidity),
         buyLiquidity: formatPrice(totalBuyVolume),
         sellLiquidity: formatPrice(totalSellVolume),
@@ -748,8 +297,8 @@ async function generateMarketDecision() {
       confidence: 'LOW',
       reason: 'Lỗi phân tích thị trường',
       metrics: {
-        avgDeviation: null,
-        spotTrend: null,
+        avgBuyPrice: null,
+        avgSellPrice: null,
         liquidity: null,
         spread: null,
         merchantHealth: null
@@ -769,38 +318,6 @@ function formatPrice(price) {
 }
 
 // API Endpoints
-app.get('/api/anomalies', (req, res) => {
-  const thresholdParam = req.query.threshold;
-  
-  console.log('API call: /api/anomalies');
-  console.log('Latest data:', {
-    timestamp: latestData.timestamp,
-    anomaliesCount: Array.isArray(latestData.anomalies) ? latestData.anomalies.length : 'not an array',
-    anomaliesType: typeof latestData.anomalies
-  });
-  
-  // If threshold parameter is provided, filter anomalies using the provided threshold
-  if (thresholdParam && !isNaN(parseFloat(thresholdParam))) {
-    const threshold = parseFloat(thresholdParam);
-    
-    // Ensure anomalies is an array
-    const anomaliesArray = Array.isArray(latestData.anomalies) ? latestData.anomalies : [];
-    
-    const filteredAnomalies = anomaliesArray.filter(
-      anomaly => Math.abs(anomaly.deviation) >= threshold
-    );
-    
-    res.json({
-      anomalies: filteredAnomalies,
-      timestamp: latestData.timestamp,
-      appliedThreshold: threshold
-    });
-  } else {
-    // Return original data if no threshold parameter
-    res.json(latestData);
-  }
-});
-
 app.get('/api/config', (req, res) => {
   res.json(CONFIG);
 });
@@ -839,7 +356,7 @@ app.put('/api/config', (req, res) => {
 // Diagnostic endpoint to see raw P2P ads
 app.get('/api/rawdata', async (req, res) => {
   try {
-    const asset = 'USDT';
+    const asset = CONFIG.assets[0]; // Use the first asset from config
     const tradeType = req.query.type || 'BUY'; // Default to BUY
     const ads = await fetchP2PAdvertisements(asset, tradeType);
     
@@ -880,8 +397,6 @@ app.get('/api/decision', async (req, res) => {
 // Create endpoint for fetching BTC trend
 app.get('/api/btc-trend', async (req, res) => {
   try {
-    const now = Date.now();
-    const timeSinceLastFetch = now - API_CACHE.coingecko.lastFetch;
     let price, change24h, trend;
     
     // Try Binance first (higher rate limits)
@@ -905,122 +420,7 @@ app.get('/api/btc-trend', async (req, res) => {
         });
       }
     } catch (err) {
-      console.log('Binance failed for BTC trend data, trying CoinGecko');
-    }
-    
-    // Only try CoinGecko if we haven't hit rate limits recently
-    if (timeSinceLastFetch > API_CACHE.coingecko.retryDelay) {
-      try {
-        console.log('Trying CoinGecko for BTC trend data...');
-        const response = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true');
-        
-        if (response.data && response.data.bitcoin && response.data.bitcoin.usd) {
-          price = response.data.bitcoin.usd;
-          
-          // Get trend from 24h price change
-          if (response.data.bitcoin.usd_24h_change !== undefined) {
-            change24h = response.data.bitcoin.usd_24h_change;
-            
-            if (change24h > 1.5) trend = 'UP';
-            else if (change24h < -1.5) trend = 'DOWN';
-            else trend = 'NEUTRAL';
-          }
-          
-          // Update coingecko cache (even for bitcoin data)
-          if (!API_CACHE.bitcoin) {
-            API_CACHE.bitcoin = {
-              lastFetch: 0,
-              retryDelay: 5000,
-              maxRetryDelay: 300000,
-              data: null
-            };
-          }
-          
-          API_CACHE.bitcoin.data = response.data;
-          API_CACHE.bitcoin.lastFetch = now;
-          API_CACHE.bitcoin.retryDelay = 5000;
-          
-          console.log(`Got BTC price from CoinGecko: $${price} (${trend}, ${change24h.toFixed(2)}%)`);
-          
-          return res.json({
-            price,
-            trend,
-            change24h: parseFloat(change24h.toFixed(2)),
-            source: 'coingecko'
-          });
-        } else {
-          throw new Error('Invalid response from CoinGecko');
-        }
-      } catch (geckoErr) {
-        console.log('Error getting BTC price from CoinGecko:', geckoErr.message);
-        
-        // If we got a 429 error, increase backoff
-        if (geckoErr.message && (geckoErr.message.includes('429') || 
-            (geckoErr.response && geckoErr.response.status === 429))) {
-          if (!API_CACHE.bitcoin) {
-            API_CACHE.bitcoin = {
-              lastFetch: now,
-              retryDelay: 10000,
-              maxRetryDelay: 300000,
-              data: null
-            };
-          }
-          
-          API_CACHE.bitcoin.retryDelay = Math.min(
-            API_CACHE.bitcoin.retryDelay * 2,
-            API_CACHE.bitcoin.maxRetryDelay
-          );
-          console.log(`Increased CoinGecko backoff for BTC to ${API_CACHE.bitcoin.retryDelay}ms`);
-        }
-        
-        // Try to use cached data if available
-        if (API_CACHE.bitcoin && API_CACHE.bitcoin.data && API_CACHE.bitcoin.data.bitcoin) {
-          price = API_CACHE.bitcoin.data.bitcoin.usd;
-          
-          if (API_CACHE.bitcoin.data.bitcoin.usd_24h_change !== undefined) {
-            change24h = API_CACHE.bitcoin.data.bitcoin.usd_24h_change;
-            
-            if (change24h > 1.5) trend = 'UP';
-            else if (change24h < -1.5) trend = 'DOWN';
-            else trend = 'NEUTRAL';
-          } else {
-            trend = 'NEUTRAL';
-            change24h = 0;
-          }
-          
-          console.log(`Using cached CoinGecko data for BTC: $${price} (${trend})`);
-          
-          return res.json({
-            price,
-            trend,
-            change24h: parseFloat(change24h.toFixed(2)),
-            source: 'cache'
-          });
-        }
-      }
-    } else if (API_CACHE.bitcoin && API_CACHE.bitcoin.data && API_CACHE.bitcoin.data.bitcoin) {
-      // Use cached data during backoff period
-      price = API_CACHE.bitcoin.data.bitcoin.usd;
-      
-      if (API_CACHE.bitcoin.data.bitcoin.usd_24h_change !== undefined) {
-        change24h = API_CACHE.bitcoin.data.bitcoin.usd_24h_change;
-        
-        if (change24h > 1.5) trend = 'UP';
-        else if (change24h < -1.5) trend = 'DOWN';
-        else trend = 'NEUTRAL';
-      } else {
-        trend = 'NEUTRAL';
-        change24h = 0;
-      }
-      
-      console.log(`Using cached BTC data during backoff (${Math.round((API_CACHE.bitcoin.retryDelay - (now - API_CACHE.bitcoin.lastFetch))/1000)}s remaining): $${price} (${trend})`);
-      
-      return res.json({
-        price,
-        trend,
-        change24h: parseFloat(change24h.toFixed(2)),
-        source: 'backoff-cache'
-      });
+      console.log('Binance failed for BTC trend data, using algorithmic fallback');
     }
     
     // Fallback to algorithmic value
@@ -1073,11 +473,7 @@ app.get('/api/binance-data', async (req, res) => {
     const btcStatsResponse = await axios.get('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');
     const priceChangePercent = parseFloat(btcStatsResponse.data.priceChangePercent);
     
-    // 3. Get USDT price in VND from fetchSpotPrice (which uses CoinGecko with caching)
-    const usdtToVndRate = await fetchSpotPrice('USDT');
-    console.log(`Using spot price for USDT/VND: ${usdtToVndRate}`);
-    
-    // 4. Calculate buy and sell liquidity from order book
+    // 3. Calculate buy and sell liquidity from order book
     let buyLiquidity = 0;
     let sellLiquidity = 0;
     
@@ -1106,7 +502,6 @@ app.get('/api/binance-data', async (req, res) => {
       priceChangePercent,
       buyLiquidity,
       sellLiquidity,
-      usdtToVndRate,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1116,7 +511,7 @@ app.get('/api/binance-data', async (req, res) => {
 });
 
 // Function to fetch all P2P data (not ads)
-async function fetchAllP2PData(asset = 'USDT', fiat = 'VND', page = 1, rows = 50) {
+async function fetchAllP2PData(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, page = 1, rows = 20) {
   try {
     console.log(`Fetching all P2P data for ${asset} in ${fiat}, page ${page}, rows ${rows}`);
     
@@ -1141,13 +536,14 @@ async function fetchAllP2PData(asset = 'USDT', fiat = 'VND', page = 1, rows = 50
     console.log('Sending BUY request payload:', JSON.stringify(payload));
     
     const response = await axios.post(
-      'https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', 
+      API_CONFIG.binanceApiUrl, 
       payload,
       {
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
       }
     );
 
@@ -1163,13 +559,14 @@ async function fetchAllP2PData(asset = 'USDT', fiat = 'VND', page = 1, rows = 50
     console.log('Sending SELL request payload:', JSON.stringify(sellPayload));
     
     const sellResponse = await axios.post(
-      'https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search', 
+      API_CONFIG.binanceApiUrl, 
       sellPayload,
       {
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
       }
     );
 
@@ -1202,127 +599,372 @@ async function fetchAllP2PData(asset = 'USDT', fiat = 'VND', page = 1, rows = 50
   }
 }
 
-// Add API endpoint for all P2P data
-app.get('/api/p2p/all', async (req, res) => {
-  const asset = req.query.asset || 'USDT';
-  const fiat = req.query.fiat || 'VND';
-  const page = parseInt(req.query.page || '1');
-  const rows = parseInt(req.query.rows || '50');
-  
-  console.log(`Received request for /api/p2p/all with asset=${asset}, fiat=${fiat}, page=${page}, rows=${rows}`);
-  
+// Cache for ultra-fast responses
+const P2P_CACHE = {
+  data: null,
+  lastFetch: 0,
+  ttl: parseInt(process.env.CACHE_TTL) || 5000 // Use environment variable for cache TTL
+};
+
+// Super optimized function to fetch ONLY top 30 lowest buy prices (1 API call + caching)
+async function fetchTop30BuyOnly(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency) {
   try {
-    const allP2PData = await fetchAllP2PData(asset, fiat, page, rows);
+    const now = Date.now();
     
-    // Add extra metadata to help clients understand limitations
-    const responseData = {
-      ...allP2PData,
-      metadata: {
-        requestedRows: rows,
-        actualRows: {
-          buy: allP2PData.buy?.length || 0,
-          sell: allP2PData.sell?.length || 0,
-          total: (allP2PData.buy?.length || 0) + (allP2PData.sell?.length || 0)
+    // Check cache first - return cached data if fresh (ultra-fast: ~1-5ms)
+    if (P2P_CACHE.data && (now - P2P_CACHE.lastFetch) < P2P_CACHE.ttl) {
+      console.log(`Returning cached data (${now - P2P_CACHE.lastFetch}ms old) - ultra fast response!`);
+      return {
+        ...P2P_CACHE.data,
+        metadata: {
+          ...P2P_CACHE.data.metadata,
+          cached: true,
+          cacheAge: `${now - P2P_CACHE.lastFetch}ms`,
+          executionTime: '~1ms'
+        }
+      };
+    }
+    
+    console.log(`Fetching fresh data - top 30 lowest BUY prices for ${asset} in ${fiat} (super optimized)`);
+    
+    const startTime = Date.now();
+    
+    // Add timeout and better error handling
+    const timeoutMs = API_CONFIG.timeout; // Use API_CONFIG timeout
+    const payload = {
+      page: 1,
+      rows: 20, // Reduce from 30 to 20 to avoid "illegal parameter" error
+      asset,
+      tradeType: 'BUY',
+      fiat,
+      publisherType: null,
+      merchantCheck: false,
+      payTypes: [],
+      countries: [],
+      transAmount: ""
+    };
+    
+    console.log('Sending Binance API request with payload:', JSON.stringify(payload));
+    
+    // Make API call with timeout
+    const buyResponse = await axios.post(
+      API_CONFIG.binanceApiUrl,
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
         },
-        limitInfo: rows > 20 ? "Binance API may limit results to approximately 20 records per request" : null,
-        page: page
+        timeout: timeoutMs
+      }
+    );
+
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    console.log(`Binance API responded in ${executionTime}ms with status:`, buyResponse.status);
+    
+    // Check if Binance API returned an error
+    if (buyResponse.data && buyResponse.data.code && buyResponse.data.code !== '000000') {
+      console.error('Binance API returned error:', buyResponse.data);
+      
+      let errorMessage = 'Binance API Error';
+      if (buyResponse.data.code === '000002') {
+        errorMessage = 'Invalid parameters sent to Binance API';
+      } else if (buyResponse.data.message) {
+        errorMessage = `Binance API Error: ${buyResponse.data.message}`;
+      }
+      
+      return {
+        buy: [],
+        sell: [],
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'binance_api_error',
+          binanceError: {
+            code: buyResponse.data.code,
+            message: buyResponse.data.message,
+            success: buyResponse.data.success
+          }
+        }
+      };
+    }
+    
+    // Check if response has expected structure
+    if (!buyResponse.data || !buyResponse.data.data || !Array.isArray(buyResponse.data.data)) {
+      console.error('Unexpected response structure from Binance API:');
+      console.error('- buyResponse.data exists:', !!buyResponse.data);
+      console.error('- buyResponse.data.data exists:', !!buyResponse.data?.data);
+      console.error('- buyResponse.data.data is array:', Array.isArray(buyResponse.data?.data));
+      console.error('- buyResponse.data.data type:', typeof buyResponse.data?.data);
+      console.error('- buyResponse.data keys:', buyResponse.data ? Object.keys(buyResponse.data) : []);
+      
+      // Log first few characters of response for debugging
+      if (buyResponse.data) {
+        console.error('- Response sample:', JSON.stringify(buyResponse.data, null, 2).substring(0, 500));
+      }
+      
+      return {
+        buy: [],
+        sell: [],
+        error: 'Unexpected response structure from Binance API',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'invalid_response_structure',
+          responseStructure: {
+            hasData: !!buyResponse.data,
+            hasDataData: !!buyResponse.data?.data,
+            isDataArray: Array.isArray(buyResponse.data?.data),
+            dataType: typeof buyResponse.data?.data,
+            responseKeys: buyResponse.data ? Object.keys(buyResponse.data) : []
+          }
+        }
+      };
+    }
+    
+    const buyData = buyResponse.data.data || [];
+    console.log(`Successfully fetched ${buyData.length} buy advertisements`);
+    
+    const results = {
+      buy: buyData.slice(0, 30), // Top 30 lowest buy prices (already sorted)
+      sell: [], // No sell data needed
+      timestamp: new Date().toISOString(),
+      metadata: {
+        pagesSearched: 1,
+        totalRecordsScanned: buyData.length,
+        executionTime: `${executionTime}ms`,
+        superOptimized: true,
+        description: 'Ultra-fast single API call for buy orders only'
       }
     };
     
-    // Log response summary
-    console.log(`Response summary: Sending ${responseData.metadata.actualRows.total} total records (${responseData.metadata.actualRows.buy} buy, ${responseData.metadata.actualRows.sell} sell)`);
+    // Update cache only if we got data
+    if (buyData.length > 0) {
+      P2P_CACHE.data = results;
+      P2P_CACHE.lastFetch = now;
+      console.log(`Cache updated with ${buyData.length} buy advertisements`);
+    }
     
-    res.json(responseData);
+    console.log(`Super optimized top 30 BUY fetch completed in ${executionTime}ms. Found ${results.buy.length} lowest buy prices with 1 API call (${buyData.length} total records)`);
+    return results;
   } catch (error) {
-    console.error('Error fetching all P2P data:', error);
-    
-    // Send a structured error response
-    res.status(500).json({ 
-      error: 'Failed to fetch P2P data', 
+    console.error(`Error in super optimized fetchTop30BuyOnly:`, {
       message: error.message,
-      timestamp: new Date().toISOString(),
-      buy: [], 
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
+    
+    // Determine error type for better debugging
+    let errorType = 'unknown';
+    let errorMessage = error.message;
+    
+    if (error.code === 'ECONNABORTED') {
+      errorType = 'timeout';
+      errorMessage = 'Request timed out - Binance API not responding';
+    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      errorType = 'network';
+      errorMessage = 'Network error - Cannot reach Binance API';
+    } else if (error.response?.status === 429) {
+      errorType = 'rate_limit';
+      errorMessage = 'Rate limited by Binance API';
+    } else if (error.response?.status === 403) {
+      errorType = 'forbidden';
+      errorMessage = 'Access forbidden by Binance API';
+    } else if (error.response?.status >= 500) {
+      errorType = 'server_error';
+      errorMessage = 'Binance API server error';
+    }
+    
+    return {
+      buy: [],
       sell: [],
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
       metadata: {
-        requestedRows: rows,
-        actualRows: { buy: 0, sell: 0, total: 0 },
+        errorType,
+        originalError: error.message,
+        executionTime: 'failed'
+      }
+    };
+  }
+}
+
+// Optimized function to fetch top 30 lowest buy prices with minimal API calls
+async function fetchTop30P2PData(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency) {
+  try {
+    console.log(`Fetching top 30 P2P data for ${asset} in ${fiat} (optimized)`);
+    
+    const startTime = Date.now();
+    
+    // Make 2 concurrent API calls for BUY and SELL orders
+    const [buyResponse, sellResponse] = await Promise.all([
+      axios.post(API_CONFIG.binanceApiUrl, {
+        page: 1,
+        rows: 30,
+        asset,
+        tradeType: 'BUY',
+        fiat,
+        publisherType: null,
+        merchantCheck: false,
+        payTypes: [],
+        countries: [],
+        transAmount: ""
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
+      }),
+      axios.post(API_CONFIG.binanceApiUrl, {
+        page: 1,
+        rows: 30,
+        asset,
+        tradeType: 'SELL',
+        fiat,
+        publisherType: null,
+        merchantCheck: false,
+        payTypes: [],
+        countries: [],
+        transAmount: ""
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
+      })
+    ]);
+
+    const buyData = buyResponse.data.data || [];
+    const sellData = sellResponse.data.data || [];
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    const results = {
+      buy: buyData.slice(0, 30), // Top 30 lowest buy prices (already sorted)
+      sell: sellData.slice(0, 30), // Top 30 highest sell prices (already sorted)
+      timestamp: new Date().toISOString(),
+      metadata: {
+        pagesSearched: 2,
+        totalRecordsScanned: buyData.length + sellData.length,
+        executionTime: `${executionTime}ms`,
+        optimized: true,
+        description: 'Fast concurrent API calls for both buy and sell orders'
+      }
+    };
+    
+    console.log(`Optimized top 30 fetch completed in ${executionTime}ms. Found ${results.buy.length} lowest BUY prices and ${results.sell.length} highest SELL prices with only 2 API calls`);
+    return results;
+  } catch (error) {
+    console.error(`Error in optimized fetchTop30P2PData:`, error);
+    return { buy: [], sell: [], error: error.message };
+  }
+}
+
+// Add API endpoint for all P2P data - now returns top 30 lowest buy and top 30 highest sell
+app.get('/api/p2p/all', async (req, res) => {
+  try {
+    const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, onlyBuy } = req.query;
+    const isOnlyBuy = onlyBuy === 'true';
+    
+    console.log(`Received request for /api/p2p/all with asset=${asset}, fiat=${fiat} - fetching top 30 ${isOnlyBuy ? 'buy only' : 'of each type'}`);
+    
+    // Use the appropriate optimized function
+    const top30Data = isOnlyBuy ? await fetchTop30BuyOnly(asset, fiat) : await fetchTop30P2PData(asset, fiat);
+    
+    // Return with enhanced metadata
+    res.json({
+      ...top30Data,
+      metadata: {
+        ...top30Data.metadata,
+        dataType: 'top30',
+        buyDescription: 'Top 30 lowest buy prices',
+        sellDescription: 'Top 30 highest sell prices',
+        recordCounts: {
+          buy: top30Data.buy?.length || 0,
+          sell: top30Data.sell?.length || 0,
+          total: (top30Data.buy?.length || 0) + (top30Data.sell?.length || 0)
+        },
+        limitInfo: `Showing top 30 lowest buy prices${top30Data.metadata?.superOptimized ? '' : ' and top 30 highest sell prices'} (${top30Data.metadata?.superOptimized ? 'super optimized - 1 API call' : top30Data.metadata?.optimized ? 'optimized - 2 concurrent API calls' : 'standard fetch'})`
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching top 30 P2P data:', error);
+    res.status(500).json({
+      buy: [],
+      sell: [],
+      error: error.message,
+      metadata: {
+        dataType: 'top30',
         error: true,
-        errorDetails: error.message
+        executionTime: 'failed'
       }
     });
   }
 });
 
-// Socket connection
-io.on('connection', (socket) => {
-  console.log('Client connected');
+// Add a simple test endpoint to check Binance API connectivity
+app.get('/api/test/binance', async (req, res) => {
+  const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency } = req.query;
   
-  // Send latest data to newly connected client
-  socket.emit('anomalies', latestData);
-  
-  // Send latest decision
-  socket.emit('market_decision', latestDecision);
-  
-  // Handle request for all P2P data
-  socket.on('request_all_p2p', async (params) => {
-    try {
-      const asset = params?.asset || 'USDT';
-      const fiat = params?.fiat || 'VND';
-      const page = parseInt(params?.page || '1');
-      const rows = parseInt(params?.rows || '50');
-      
-      const allP2PData = await fetchAllP2PData(asset, fiat, page, rows);
-      socket.emit('all_p2p_data', allP2PData);
-    } catch (error) {
-      console.error('Error in socket request for all P2P data:', error);
-      socket.emit('error', { message: 'Failed to fetch P2P data', error: error.message });
-    }
-  });
-  
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-  });
-});
-
-// Scheduled task to fetch data and emit to clients
-async function scheduleDataFetch() {
   try {
-    const data = await detectAnomalies();
+    console.log(`Testing Binance API connectivity for ${asset}/${fiat}`);
     
-    // Ensure data has the correct structure
-    if (!data) {
-      console.error('detectAnomalies returned null or undefined');
-      latestData = { anomalies: [], timestamp: new Date().toISOString() };
-    } else {
-      latestData = {
-        anomalies: Array.isArray(data.anomalies) ? data.anomalies : [],
-        timestamp: data.timestamp || new Date().toISOString()
-      };
-    }
+    const testPayload = {
+      page: 1,
+      rows: 1, // Just fetch 1 record to test connectivity
+      asset,
+      tradeType: 'BUY',
+      fiat,
+      publisherType: null,
+      merchantCheck: false,
+      payTypes: [],
+      countries: [],
+      transAmount: ""
+    };
     
-    console.log(`Found ${latestData.anomalies.length} anomalies at ${latestData.timestamp}`);
+    const response = await axios.post(
+      API_CONFIG.binanceApiUrl,
+      testPayload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
+      }
+    );
     
-    // Emit to clients
-    io.emit('anomalies', latestData);
+    res.json({
+      success: true,
+      status: response.status,
+      dataLength: response.data?.data?.length || 0,
+      message: 'Binance API is accessible',
+      sampleData: response.data?.data?.slice(0, 1) || []
+    });
   } catch (error) {
-    console.error('Error in scheduled task:', error);
-    // Initialize with empty data on error
-    latestData = { anomalies: [], timestamp: new Date().toISOString() };
-    io.emit('anomalies', latestData);
+    console.error('Binance API test failed:', error.message);
+    res.json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      status: error.response?.status,
+      message: 'Binance API test failed'
+    });
   }
-  
-  // Schedule next execution
-  setTimeout(scheduleDataFetch, CONFIG.updateInterval);
-}
+});
 
 // Scheduled task to update market decision
 async function scheduleDecisionUpdate() {
   try {
     const decision = await generateMarketDecision();
     latestDecision = decision;
-    
-    // Emit decision to clients
-    io.emit('market_decision', latestDecision);
     
     console.log(`Market decision updated: ${decision.decision} (${decision.confidence})`);
   } catch (error) {
@@ -1334,7 +976,7 @@ async function scheduleDecisionUpdate() {
 }
 
 // Function to search across multiple pages by transaction amount
-async function searchAllByAmount(asset = 'USDT', fiat = 'VND', options = {}) {
+async function searchAllByAmount(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, options = {}) {
   try {
     // Extract options - supports single amount or range (fromAmount/toAmount)
     const { amount, fromAmount, toAmount } = options;
@@ -1525,8 +1167,8 @@ async function searchAllByAmount(asset = 'USDT', fiat = 'VND', options = {}) {
 
 // API endpoint for searching across all pages by transaction amount
 app.get('/api/p2p/search-all', async (req, res) => {
-  const asset = req.query.asset || 'USDT';
-  const fiat = req.query.fiat || 'VND';
+  const asset = req.query.asset || CONFIG.assets[0];
+  const fiat = req.query.fiat || CONFIG.fiatCurrency;
   const amount = req.query.amount;
   const fromAmount = req.query.fromAmount;
   const toAmount = req.query.toAmount;
@@ -1584,10 +1226,18 @@ app.get('/api/p2p/search-all', async (req, res) => {
 });
 
 // Start the server
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  // Start the data fetching schedule
-  scheduleDataFetch();
+  console.log('Configuration loaded:');
+  console.log(`- Port: ${PORT}`);
+  console.log(`- Default Asset: ${CONFIG.assets[0]}`);
+  console.log(`- Default Fiat: ${CONFIG.fiatCurrency}`);
+  console.log(`- Countries: ${CONFIG.countries.join(', ')}`);
+  console.log(`- Payment Methods: ${CONFIG.paymentMethods.join(', ')}`);
+  console.log(`- Update Interval: ${CONFIG.updateInterval}ms`);
+  console.log(`- Cache TTL: ${P2P_CACHE.ttl}ms`);
+  console.log(`- API Timeout: ${API_CONFIG.timeout}ms`);
+  
   // Start the decision update schedule with a slight delay
   setTimeout(scheduleDecisionUpdate, 5000);
 }); 

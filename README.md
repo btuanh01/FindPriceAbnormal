@@ -19,6 +19,40 @@ A web dashboard that detects price anomalies between Binance P2P USDT advertisem
 
 ## Setup Instructions
 
+### Environment Configuration
+
+1. Copy the example environment file:
+```
+cp .env.example .env
+```
+
+2. Edit the `.env` file to configure your server settings:
+```
+# Server Configuration
+PORT=5000
+
+# API Configuration
+BINANCE_API_URL=https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search
+API_TIMEOUT=10000
+
+# Application Configuration
+UPDATE_INTERVAL=60000
+DECISION_INTERVAL=60000
+DEVIATION_THRESHOLD=0.5
+
+# Default Trading Configuration
+DEFAULT_ASSET=USDT
+DEFAULT_FIAT=VND
+DEFAULT_COUNTRIES=VN
+DEFAULT_PAYMENT_METHODS=BANK,BankTransferVietnam
+
+# Cache Configuration
+CACHE_TTL=5000
+
+# Logging
+LOG_LEVEL=info
+```
+
 ### Backend Setup
 
 1. Navigate to the server directory:
@@ -36,7 +70,7 @@ npm install
 npm run dev
 ```
 
-The server will run on http://localhost:5000 by default.
+The server will run on the port specified in your `.env` file (default: http://localhost:5000).
 
 ### Frontend Setup
 

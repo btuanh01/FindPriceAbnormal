@@ -1,5 +1,22 @@
 {
+  "name": "findpricedashboard",
+  "version": "1.0.0",
+  "description": "P2P Price Dashboard",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "test": "echo \"No tests specified\"",
+    "install-deps": "npm install && cd server && npm install && cd ../client && npm install"
+  },
   "dependencies": {
-    "bootstrap-icons": "^1.11.3"
-  }
+    "concurrently": "^8.2.2"
+  },
+  "devDependencies": {},
+  "keywords": ["p2p", "binance", "dashboard"],
+  "author": "",
+  "license": "ISC"
 }
