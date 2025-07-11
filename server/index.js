@@ -48,28 +48,30 @@ const API_CONFIG = {
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 };
 
-// Function to fetch P2P advertisements
-async function fetchP2PAdvertisements(asset, tradeType) {
+// Simplified function to fetch top 20 lowest prices from Binance P2P
+async function fetchTop20LowestPrices(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, minLimit = 0) {
   try {
-    console.log(`Fetching P2P ads for ${asset} (${tradeType}) in Vietnam using VND with payment methods: ${CONFIG.paymentMethods.join(', ')}`);
+    console.log(`Fetching top 20 lowest prices for ${asset} in ${fiat} with min limit ${minLimit}`);
     
-    // Try with specific payment methods
-    let payload = {
+    const startTime = Date.now();
+    
+    // Payload to get top 20 lowest buy prices with min limit filter
+    const payload = {
       page: 1,
       rows: 20,
       asset,
-      tradeType,
-      fiat: CONFIG.fiatCurrency,
+      tradeType: 'BUY',
+      fiat,
       publisherType: null,
       merchantCheck: false,
-      payTypes: CONFIG.paymentMethods,
-      countries: CONFIG.countries,
-      transAmount: ""
+      payTypes: [],
+      countries: [],
+      transAmount: minLimit > 0 ? minLimit.toString() : ""
     };
     
-    console.log('P2P API request payload (with specific payment methods):', JSON.stringify(payload));
+    console.log('Binance API request payload:', JSON.stringify(payload));
     
-    let response = await axios.post(
+    const response = await axios.post(
       API_CONFIG.binanceApiUrl, 
       payload,
       {
@@ -81,74 +83,115 @@ async function fetchP2PAdvertisements(asset, tradeType) {
       }
     );
 
-    let adsData = response.data.data || [];
-    console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with specified payment methods`);
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    console.log(`Binance API responded in ${executionTime}ms with status:`, response.status);
 
-    // If no data with specific payment methods, try with all payment methods
-    if (adsData.length === 0) {
-      console.log('No ads found with specified payment methods, trying with all payment methods');
+    // Check if Binance API returned an error
+    if (response.data && response.data.code && response.data.code !== '000000') {
+      console.error('Binance API returned error:', response.data);
       
-      payload = {
-        page: 1,
-        rows: 20,
-        asset,
-        tradeType,
-        fiat: CONFIG.fiatCurrency,
-        publisherType: null,
-        merchantCheck: false,
-        payTypes: [], // No payment method filter
-        countries: CONFIG.countries,
-        transAmount: ""
-      };
-      
-      console.log('P2P API request payload (all payment methods):', JSON.stringify(payload));
-      
-      response = await axios.post(
-        API_CONFIG.binanceApiUrl, 
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': API_CONFIG.userAgent
-          },
-          timeout: API_CONFIG.timeout
-        }
-      );
-      
-      adsData = response.data.data || [];
-      console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with all payment methods`);
-      
-      // We'll filter for our specific payment methods in the anomaly detection function
-    }
-
-    // Log all payment methods found
-    if (adsData.length > 0) {
-      const allPaymentMethods = new Set();
-      adsData.forEach(ad => {
-        if (ad.adv.tradeMethods) {
-          ad.adv.tradeMethods.forEach(method => {
-            allPaymentMethods.add(method.identifier);
-          });
-        }
-      });
-      
-      console.log('All available payment methods:', Array.from(allPaymentMethods));
-      
-      if (adsData.length > 0) {
-        console.log('Sample ad structure:', JSON.stringify(adsData[0], null, 2).substring(0, 500) + '...');
+      let errorMessage = 'Binance API Error';
+      if (response.data.code === '000002') {
+        errorMessage = 'Invalid parameters sent to Binance API';
+      } else if (response.data.message) {
+        errorMessage = `Binance API Error: ${response.data.message}`;
       }
-    } else {
-      console.log('P2P API response:', JSON.stringify(response.data, null, 2));
+      
+      return {
+        buy: [],
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'binance_api_error',
+          dataType: 'top20_lowest_prices',
+          recordCount: 0
+        }
+      };
     }
     
-    return adsData;
-  } catch (error) {
-    console.error(`Error fetching P2P ads for ${asset}:`, error.message);
-    if (error.response) {
-      console.error('Error response:', error.response.data);
+    // Check if response has expected structure
+    if (!response.data || !response.data.data || !Array.isArray(response.data.data)) {
+      console.error('Unexpected response structure from Binance API');
+      return {
+        buy: [],
+        error: 'Unexpected response structure from Binance API',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'invalid_response',
+          dataType: 'top20_lowest_prices',
+          recordCount: 0
+        }
+      };
     }
-    return [];
+    
+    const buyData = response.data.data || [];
+    console.log(`Received ${buyData.length} buy advertisements from Binance (already filtered by min limit ${minLimit})`);
+      
+    // Sort by price (lowest first) - Binance should return them sorted but let's ensure it
+    const sortedData = buyData.sort((a, b) => parseFloat(a.adv.price) - parseFloat(b.adv.price));
+    const top20 = sortedData.slice(0, 20);
+      
+    console.log(`Returning top ${top20.length} lowest prices with min limit ${minLimit} (filtered by Binance)`);
+    
+    return {
+      buy: top20,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        executionTime: `${executionTime}ms`,
+        dataType: 'top20_lowest_prices',
+        recordCount: top20.length,
+        description: `Top ${top20.length} lowest buy prices${minLimit > 0 ? ` with min limit >= ${minLimit}` : ''} (filtered by Binance API)`,
+        cached: false,
+        minLimit: minLimit,
+        apiFiltered: true
+      }
+    };
+    
+  } catch (error) {
+    console.error(`Error fetching top 20 lowest prices for ${asset}:`, error.message);
+    
+    let errorType = 'unknown_error';
+    let errorMessage = error.message;
+    
+    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+      errorType = 'network_error';
+      errorMessage = 'Cannot connect to Binance API. Please check your internet connection.';
+    } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      errorType = 'timeout_error';
+      errorMessage = 'Request to Binance API timed out. Please try again.';
+    } else if (error.response?.status === 403) {
+      errorType = 'forbidden_error';
+      errorMessage = 'Access to Binance API is restricted.';
+    } else if (error.response?.status === 429) {
+      errorType = 'rate_limit_error';
+      errorMessage = 'Too many requests to Binance API. Please wait and try again.';
+    }
+    
+    return {
+      buy: [],
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        executionTime: 'failed',
+        errorType,
+        dataType: 'top20_lowest_prices',
+        recordCount: 0
+      }
+    };
   }
+}
+
+// Function to format price with proper separators
+function formatPrice(price) {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0
+  }).format(price);
 }
 
 // Function to analyze market data and generate strategic recommendations
@@ -308,13 +351,107 @@ async function generateMarketDecision() {
   }
 }
 
-// Helper function to format price in VND
-function formatPrice(price) {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
-    maximumFractionDigits: 0
-  }).format(price);
+// Function to fetch P2P advertisements
+async function fetchP2PAdvertisements(asset, tradeType) {
+  try {
+    console.log(`Fetching P2P ads for ${asset} (${tradeType}) in Vietnam using VND with payment methods: ${CONFIG.paymentMethods.join(', ')}`);
+    
+    // Try with specific payment methods
+    let payload = {
+      page: 1,
+      rows: 20,
+      asset,
+      tradeType,
+      fiat: CONFIG.fiatCurrency,
+      publisherType: null,
+      merchantCheck: false,
+      payTypes: CONFIG.paymentMethods,
+      countries: CONFIG.countries,
+      transAmount: ""
+    };
+    
+    console.log('P2P API request payload (with specific payment methods):', JSON.stringify(payload));
+    
+    let response = await axios.post(
+      API_CONFIG.binanceApiUrl, 
+      payload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
+      }
+    );
+
+    let adsData = response.data.data || [];
+    console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with specified payment methods`);
+
+    // If no data with specific payment methods, try with all payment methods
+    if (adsData.length === 0) {
+      console.log('No ads found with specified payment methods, trying with all payment methods');
+      
+      payload = {
+        page: 1,
+        rows: 20,
+        asset,
+        tradeType,
+        fiat: CONFIG.fiatCurrency,
+        publisherType: null,
+        merchantCheck: false,
+        payTypes: [], // No payment method filter
+        countries: CONFIG.countries,
+        transAmount: ""
+      };
+      
+      console.log('P2P API request payload (all payment methods):', JSON.stringify(payload));
+      
+      response = await axios.post(
+        API_CONFIG.binanceApiUrl, 
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': API_CONFIG.userAgent
+          },
+          timeout: API_CONFIG.timeout
+        }
+      );
+      
+      adsData = response.data.data || [];
+      console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with all payment methods`);
+      
+      // We'll filter for our specific payment methods in the anomaly detection function
+    }
+
+    // Log all payment methods found
+    if (adsData.length > 0) {
+      const allPaymentMethods = new Set();
+      adsData.forEach(ad => {
+        if (ad.adv.tradeMethods) {
+          ad.adv.tradeMethods.forEach(method => {
+            allPaymentMethods.add(method.identifier);
+          });
+        }
+      });
+      
+      console.log('All available payment methods:', Array.from(allPaymentMethods));
+      
+      if (adsData.length > 0) {
+        console.log('Sample ad structure:', JSON.stringify(adsData[0], null, 2).substring(0, 500) + '...');
+      }
+    } else {
+      console.log('P2P API response:', JSON.stringify(response.data, null, 2));
+    }
+    
+    return adsData;
+  } catch (error) {
+    console.error(`Error fetching P2P ads for ${asset}:`, error.message);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
+    return [];
+  }
 }
 
 // API Endpoints
@@ -511,397 +648,52 @@ app.get('/api/binance-data', async (req, res) => {
 });
 
 // Function to fetch all P2P data (not ads)
-async function fetchAllP2PData(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, page = 1, rows = 20) {
-  try {
-    console.log(`Fetching all P2P data for ${asset} in ${fiat}, page ${page}, rows ${rows}`);
-    
-    // Binance API might have limitations on rows parameter, let's set a safe limit
-    const safeRows = Math.min(rows, 20); // Limit to 20 per request as Binance might restrict larger requests
-    console.log(`Using safe row limit: ${safeRows} (original request: ${rows})`);
-    
-    // Payload without merchant check or publisherType to get all data
-    const payload = {
-      page,
-      rows: safeRows,
-      asset,
-      tradeType: 'BUY', // Can be 'BUY' or 'SELL'
-      fiat,
-      publisherType: null,
-      merchantCheck: false,
-      payTypes: [],
-      countries: [],
-      transAmount: ""
-    };
-    
-    console.log('Sending BUY request payload:', JSON.stringify(payload));
-    
-    const response = await axios.post(
-      API_CONFIG.binanceApiUrl, 
-      payload,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': API_CONFIG.userAgent
-        },
-        timeout: API_CONFIG.timeout
-      }
-    );
+// Removed fetchAllP2PData function - no longer needed without paging
 
-    const data = response.data.data || [];
-    console.log(`Received ${data.length} BUY advertisements`);
-    
-    // Also fetch SELL data
-    const sellPayload = {
-      ...payload,
-      tradeType: 'SELL'
-    };
-    
-    console.log('Sending SELL request payload:', JSON.stringify(sellPayload));
-    
-    const sellResponse = await axios.post(
-      API_CONFIG.binanceApiUrl, 
-      sellPayload,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': API_CONFIG.userAgent
-        },
-        timeout: API_CONFIG.timeout
-      }
-    );
+// Removed caching - not needed for simplified approach
 
-    const sellData = sellResponse.data.data || [];
-    console.log(`Received ${sellData.length} SELL advertisements`);
-    
-    // To fulfill the original rows request, we might need to make multiple requests
-    if (data.length < rows && rows > 20) {
-      console.log(`Attempting to fetch more data to meet rows=${rows} request...`);
-      // Implementing pagination through multiple requests would go here
-      // For now, just indicating that the feature is available but limited
-    }
-    
-    // Combine both datasets
-    const result = {
-      buy: data,
-      sell: sellData,
-      timestamp: new Date().toISOString()
-    };
-    
-    console.log(`Total data returned: ${data.length + sellData.length} advertisements`);
-    return result;
-  } catch (error) {
-    console.error(`Error fetching all P2P data for ${asset}:`, error.message);
-    if (error.response) {
-      console.error('Error response status:', error.response.status);
-      console.error('Error response data:', error.response.data);
-    }
-    return { buy: [], sell: [], error: error.message };
-  }
-}
+// Removed complex fetchTop30BuyOnly function - replaced with simplified fetchTop20LowestPrices
 
-// Cache for ultra-fast responses
-const P2P_CACHE = {
-  data: null,
-  lastFetch: 0,
-  ttl: parseInt(process.env.CACHE_TTL) || 5000 // Use environment variable for cache TTL
-};
+// Removed fetchTop30P2PData function - no longer needed
 
-// Super optimized function to fetch ONLY top 30 lowest buy prices (1 API call + caching)
-async function fetchTop30BuyOnly(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency) {
-  try {
-    const now = Date.now();
-    
-    // Check cache first - return cached data if fresh (ultra-fast: ~1-5ms)
-    if (P2P_CACHE.data && (now - P2P_CACHE.lastFetch) < P2P_CACHE.ttl) {
-      console.log(`Returning cached data (${now - P2P_CACHE.lastFetch}ms old) - ultra fast response!`);
-      return {
-        ...P2P_CACHE.data,
-        metadata: {
-          ...P2P_CACHE.data.metadata,
-          cached: true,
-          cacheAge: `${now - P2P_CACHE.lastFetch}ms`,
-          executionTime: '~1ms'
-        }
-      };
-    }
-    
-    console.log(`Fetching fresh data - top 30 lowest BUY prices for ${asset} in ${fiat} (super optimized)`);
-    
-    const startTime = Date.now();
-    
-    // Add timeout and better error handling
-    const timeoutMs = API_CONFIG.timeout; // Use API_CONFIG timeout
-    const payload = {
-      page: 1,
-      rows: 20, // Reduce from 30 to 20 to avoid "illegal parameter" error
-      asset,
-      tradeType: 'BUY',
-      fiat,
-      publisherType: null,
-      merchantCheck: false,
-      payTypes: [],
-      countries: [],
-      transAmount: ""
-    };
-    
-    console.log('Sending Binance API request with payload:', JSON.stringify(payload));
-    
-    // Make API call with timeout
-    const buyResponse = await axios.post(
-      API_CONFIG.binanceApiUrl,
-      payload,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': API_CONFIG.userAgent
-        },
-        timeout: timeoutMs
-      }
-    );
-
-    const endTime = Date.now();
-    const executionTime = endTime - startTime;
-    
-    console.log(`Binance API responded in ${executionTime}ms with status:`, buyResponse.status);
-    
-    // Check if Binance API returned an error
-    if (buyResponse.data && buyResponse.data.code && buyResponse.data.code !== '000000') {
-      console.error('Binance API returned error:', buyResponse.data);
-      
-      let errorMessage = 'Binance API Error';
-      if (buyResponse.data.code === '000002') {
-        errorMessage = 'Invalid parameters sent to Binance API';
-      } else if (buyResponse.data.message) {
-        errorMessage = `Binance API Error: ${buyResponse.data.message}`;
-      }
-      
-      return {
-        buy: [],
-        sell: [],
-        error: errorMessage,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          executionTime: `${executionTime}ms`,
-          errorType: 'binance_api_error',
-          binanceError: {
-            code: buyResponse.data.code,
-            message: buyResponse.data.message,
-            success: buyResponse.data.success
-          }
-        }
-      };
-    }
-    
-    // Check if response has expected structure
-    if (!buyResponse.data || !buyResponse.data.data || !Array.isArray(buyResponse.data.data)) {
-      console.error('Unexpected response structure from Binance API:');
-      console.error('- buyResponse.data exists:', !!buyResponse.data);
-      console.error('- buyResponse.data.data exists:', !!buyResponse.data?.data);
-      console.error('- buyResponse.data.data is array:', Array.isArray(buyResponse.data?.data));
-      console.error('- buyResponse.data.data type:', typeof buyResponse.data?.data);
-      console.error('- buyResponse.data keys:', buyResponse.data ? Object.keys(buyResponse.data) : []);
-      
-      // Log first few characters of response for debugging
-      if (buyResponse.data) {
-        console.error('- Response sample:', JSON.stringify(buyResponse.data, null, 2).substring(0, 500));
-      }
-      
-      return {
-        buy: [],
-        sell: [],
-        error: 'Unexpected response structure from Binance API',
-        timestamp: new Date().toISOString(),
-        metadata: {
-          executionTime: `${executionTime}ms`,
-          errorType: 'invalid_response_structure',
-          responseStructure: {
-            hasData: !!buyResponse.data,
-            hasDataData: !!buyResponse.data?.data,
-            isDataArray: Array.isArray(buyResponse.data?.data),
-            dataType: typeof buyResponse.data?.data,
-            responseKeys: buyResponse.data ? Object.keys(buyResponse.data) : []
-          }
-        }
-      };
-    }
-    
-    const buyData = buyResponse.data.data || [];
-    console.log(`Successfully fetched ${buyData.length} buy advertisements`);
-    
-    const results = {
-      buy: buyData.slice(0, 30), // Top 30 lowest buy prices (already sorted)
-      sell: [], // No sell data needed
-      timestamp: new Date().toISOString(),
-      metadata: {
-        pagesSearched: 1,
-        totalRecordsScanned: buyData.length,
-        executionTime: `${executionTime}ms`,
-        superOptimized: true,
-        description: 'Ultra-fast single API call for buy orders only'
-      }
-    };
-    
-    // Update cache only if we got data
-    if (buyData.length > 0) {
-      P2P_CACHE.data = results;
-      P2P_CACHE.lastFetch = now;
-      console.log(`Cache updated with ${buyData.length} buy advertisements`);
-    }
-    
-    console.log(`Super optimized top 30 BUY fetch completed in ${executionTime}ms. Found ${results.buy.length} lowest buy prices with 1 API call (${buyData.length} total records)`);
-    return results;
-  } catch (error) {
-    console.error(`Error in super optimized fetchTop30BuyOnly:`, {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data
-    });
-    
-    // Determine error type for better debugging
-    let errorType = 'unknown';
-    let errorMessage = error.message;
-    
-    if (error.code === 'ECONNABORTED') {
-      errorType = 'timeout';
-      errorMessage = 'Request timed out - Binance API not responding';
-    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      errorType = 'network';
-      errorMessage = 'Network error - Cannot reach Binance API';
-    } else if (error.response?.status === 429) {
-      errorType = 'rate_limit';
-      errorMessage = 'Rate limited by Binance API';
-    } else if (error.response?.status === 403) {
-      errorType = 'forbidden';
-      errorMessage = 'Access forbidden by Binance API';
-    } else if (error.response?.status >= 500) {
-      errorType = 'server_error';
-      errorMessage = 'Binance API server error';
-    }
-    
-    return {
-      buy: [],
-      sell: [],
-      error: errorMessage,
-      timestamp: new Date().toISOString(),
-      metadata: {
-        errorType,
-        originalError: error.message,
-        executionTime: 'failed'
-      }
-    };
-  }
-}
-
-// Optimized function to fetch top 30 lowest buy prices with minimal API calls
-async function fetchTop30P2PData(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency) {
-  try {
-    console.log(`Fetching top 30 P2P data for ${asset} in ${fiat} (optimized)`);
-    
-    const startTime = Date.now();
-    
-    // Make 2 concurrent API calls for BUY and SELL orders
-    const [buyResponse, sellResponse] = await Promise.all([
-      axios.post(API_CONFIG.binanceApiUrl, {
-        page: 1,
-        rows: 30,
-        asset,
-        tradeType: 'BUY',
-        fiat,
-        publisherType: null,
-        merchantCheck: false,
-        payTypes: [],
-        countries: [],
-        transAmount: ""
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': API_CONFIG.userAgent
-        },
-        timeout: API_CONFIG.timeout
-      }),
-      axios.post(API_CONFIG.binanceApiUrl, {
-        page: 1,
-        rows: 30,
-        asset,
-        tradeType: 'SELL',
-        fiat,
-        publisherType: null,
-        merchantCheck: false,
-        payTypes: [],
-        countries: [],
-        transAmount: ""
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': API_CONFIG.userAgent
-        },
-        timeout: API_CONFIG.timeout
-      })
-    ]);
-
-    const buyData = buyResponse.data.data || [];
-    const sellData = sellResponse.data.data || [];
-    const endTime = Date.now();
-    const executionTime = endTime - startTime;
-    
-    const results = {
-      buy: buyData.slice(0, 30), // Top 30 lowest buy prices (already sorted)
-      sell: sellData.slice(0, 30), // Top 30 highest sell prices (already sorted)
-      timestamp: new Date().toISOString(),
-      metadata: {
-        pagesSearched: 2,
-        totalRecordsScanned: buyData.length + sellData.length,
-        executionTime: `${executionTime}ms`,
-        optimized: true,
-        description: 'Fast concurrent API calls for both buy and sell orders'
-      }
-    };
-    
-    console.log(`Optimized top 30 fetch completed in ${executionTime}ms. Found ${results.buy.length} lowest BUY prices and ${results.sell.length} highest SELL prices with only 2 API calls`);
-    return results;
-  } catch (error) {
-    console.error(`Error in optimized fetchTop30P2PData:`, error);
-    return { buy: [], sell: [], error: error.message };
-  }
-}
-
-// Add API endpoint for all P2P data - now returns top 30 lowest buy and top 30 highest sell
+// Simplified API endpoint for top 20 lowest prices
 app.get('/api/p2p/all', async (req, res) => {
   try {
-    const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, onlyBuy } = req.query;
-    const isOnlyBuy = onlyBuy === 'true';
+    const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, minLimit = 0 } = req.query;
     
-    console.log(`Received request for /api/p2p/all with asset=${asset}, fiat=${fiat} - fetching top 30 ${isOnlyBuy ? 'buy only' : 'of each type'}`);
+    console.log(`Received request for /api/p2p/all with asset=${asset}, fiat=${fiat}, minLimit=${minLimit} - fetching top 20 lowest prices`);
     
-    // Use the appropriate optimized function
-    const top30Data = isOnlyBuy ? await fetchTop30BuyOnly(asset, fiat) : await fetchTop30P2PData(asset, fiat);
+    // Parse minLimit as number
+    const minLimitNum = parseInt(minLimit, 10) || 0;
+    
+    // Use the simplified function to get top 20 lowest prices
+    const top20Data = await fetchTop20LowestPrices(asset, fiat, minLimitNum);
     
     // Return with enhanced metadata
     res.json({
-      ...top30Data,
+      ...top20Data,
       metadata: {
-        ...top30Data.metadata,
-        dataType: 'top30',
-        buyDescription: 'Top 30 lowest buy prices',
-        sellDescription: 'Top 30 highest sell prices',
+        ...top20Data.metadata,
+        dataType: 'top20_lowest_prices',
+        buyDescription: `Top 20 lowest buy prices${minLimitNum > 0 ? ` with min limit >= ${minLimitNum}` : ''} (filtered by Binance API)`,
         recordCounts: {
-          buy: top30Data.buy?.length || 0,
-          sell: top30Data.sell?.length || 0,
-          total: (top30Data.buy?.length || 0) + (top30Data.sell?.length || 0)
+          buy: top20Data.buy?.length || 0,
+          sell: 0,
+          total: top20Data.buy?.length || 0
         },
-        limitInfo: `Showing top 30 lowest buy prices${top30Data.metadata?.superOptimized ? '' : ' and top 30 highest sell prices'} (${top30Data.metadata?.superOptimized ? 'super optimized - 1 API call' : top30Data.metadata?.optimized ? 'optimized - 2 concurrent API calls' : 'standard fetch'})`
+        limitInfo: `Showing top 20 lowest buy prices${minLimitNum > 0 ? ` with min limit >= ${minLimitNum}` : ''} (filtered by Binance P2P API)`,
+        appliedMinLimit: minLimitNum,
+        apiFiltered: true
       }
     });
   } catch (error) {
-    console.error('Error fetching top 30 P2P data:', error);
+    console.error('Error fetching top 20 lowest prices:', error);
     res.status(500).json({
       buy: [],
       sell: [],
       error: error.message,
       metadata: {
-        dataType: 'top30',
+        dataType: 'top20_lowest_prices',
         error: true,
         executionTime: 'failed'
       }
@@ -975,255 +767,9 @@ async function scheduleDecisionUpdate() {
   setTimeout(scheduleDecisionUpdate, CONFIG.decisionInterval);
 }
 
-// Function to search across multiple pages by transaction amount
-async function searchAllByAmount(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, options = {}) {
-  try {
-    // Extract options - supports single amount or range (fromAmount/toAmount)
-    const { amount, fromAmount, toAmount } = options;
-    
-    // Log what we're searching for
-    if (amount) {
-      console.log(`Searching across all pages for ${asset} in ${fiat} with exact transaction amount ${amount}`);
-    } else if (fromAmount && toAmount) {
-      console.log(`Searching across all pages for ${asset} in ${fiat} with transaction amount range from ${fromAmount} to ${toAmount}`);
-    } else if (fromAmount) {
-      console.log(`Searching across all pages for ${asset} in ${fiat} with minimum transaction amount ${fromAmount}`);
-    } else if (toAmount) {
-      console.log(`Searching across all pages for ${asset} in ${fiat} with maximum transaction amount ${toAmount}`);
-    } else {
-      throw new Error('No valid search criteria provided');
-    }
-    
-    // Parse amounts to ensure they're valid numbers
-    const parsedAmount = amount ? parseFloat(amount) : null;
-    const parsedFromAmount = fromAmount ? parseFloat(fromAmount) : null;
-    const parsedToAmount = toAmount ? parseFloat(toAmount) : null;
-    
-    // Validate numbers
-    if ((amount && isNaN(parsedAmount)) || 
-        (fromAmount && isNaN(parsedFromAmount)) || 
-        (toAmount && isNaN(parsedToAmount))) {
-      throw new Error('Invalid transaction amount values');
-    }
-    
-    // Determine search criteria for metadata
-    let searchCriteria = '';
-    let searchType = '';
-    let searchValue = null;
-    
-    if (parsedAmount) {
-      searchCriteria = `Transaction amount: ${parsedAmount} ${fiat}`;
-      searchType = 'exact-amount';
-      searchValue = parsedAmount;
-    } else if (parsedFromAmount && parsedToAmount) {
-      searchCriteria = `Transaction amount range: ${parsedFromAmount} - ${parsedToAmount} ${fiat}`;
-      searchType = 'amount-range';
-      searchValue = { from: parsedFromAmount, to: parsedToAmount };
-    } else if (parsedFromAmount) {
-      searchCriteria = `Minimum transaction amount: ${parsedFromAmount} ${fiat}`;
-      searchType = 'min-amount';
-      searchValue = parsedFromAmount;
-    } else if (parsedToAmount) {
-      searchCriteria = `Maximum transaction amount: ${parsedToAmount} ${fiat}`;
-      searchType = 'max-amount';
-      searchValue = parsedToAmount;
-    }
-    
-    // Results container
-    const allResults = {
-      buy: [],
-      sell: [],
-      timestamp: new Date().toISOString(),
-      metadata: {
-        searchType,
-        searchValue,
-        searchCriteria,
-        pagesSearched: 0,
-        totalRecordsScanned: 0
-      }
-    };
-    
-    // How many pages to search (maximum)
-    const MAX_PAGES = 5;
-    
-    // Function to filter listings based on amount criteria
-    const filterByAmount = (item) => {
-      const minLimit = parseFloat(item.adv.minSingleTransAmount);
-      const maxLimit = parseFloat(item.adv.maxSingleTransAmount);
-      
-      // If using exact amount
-      if (parsedAmount) {
-        return parsedAmount >= minLimit && parsedAmount <= maxLimit;
-      }
-      
-      // If using range filter - check for overlap between ranges
-      if (parsedFromAmount && parsedToAmount) {
-        // Check if there's any overlap between the item's range and our filter range
-        return (
-          // Item's min is within our range
-          (minLimit >= parsedFromAmount && minLimit <= parsedToAmount) ||
-          // Item's max is within our range
-          (maxLimit >= parsedFromAmount && maxLimit <= parsedToAmount) ||
-          // Our range is completely within item's range
-          (parsedFromAmount >= minLimit && parsedToAmount <= maxLimit)
-        );
-      }
-      
-      // If only using minimum amount
-      if (parsedFromAmount) {
-        // Item's max limit must be >= our min amount
-        return maxLimit >= parsedFromAmount;
-      }
-      
-      // If only using maximum amount
-      if (parsedToAmount) {
-        // Item's min limit must be <= our max amount
-        return minLimit <= parsedToAmount;
-      }
-      
-      // Default case (should not reach here if validation is correct)
-      return false;
-    };
-    
-    // Search in BUY advertisements
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      try {
-        const pageData = await fetchAllP2PData(asset, fiat, page, 20);
-        allResults.metadata.pagesSearched++;
-        
-        if (pageData.buy && pageData.buy.length > 0) {
-          allResults.metadata.totalRecordsScanned += pageData.buy.length;
-          
-          // Filter by transaction amount criteria
-          const filteredBuyData = pageData.buy.filter(filterByAmount);
-          
-          // Add filtered data to results
-          allResults.buy = [...allResults.buy, ...filteredBuyData];
-          
-          // If we have enough results or no more data, stop searching
-          if (pageData.buy.length < 20 || allResults.buy.length >= 100) {
-            break;
-          }
-        } else {
-          // No data for this page, stop searching
-          break;
-        }
-        
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (error) {
-        console.error(`Error searching BUY page ${page}:`, error.message);
-        // Continue with next page despite errors
-      }
-    }
-    
-    // Search in SELL advertisements
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      try {
-        const pageData = await fetchAllP2PData(asset, fiat, page, 20);
-        
-        if (pageData.sell && pageData.sell.length > 0) {
-          allResults.metadata.totalRecordsScanned += pageData.sell.length;
-          
-          // Filter by transaction amount criteria
-          const filteredSellData = pageData.sell.filter(filterByAmount);
-          
-          // Add filtered data to results
-          allResults.sell = [...allResults.sell, ...filteredSellData];
-          
-          // If we have enough results or no more data, stop searching
-          if (pageData.sell.length < 20 || allResults.sell.length >= 100) {
-            break;
-          }
-        } else {
-          // No data for this page, stop searching
-          break;
-        }
-        
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (error) {
-        console.error(`Error searching SELL page ${page}:`, error.message);
-        // Continue with next page despite errors
-      }
-    }
-    
-    // Sort results by price
-    allResults.buy.sort((a, b) => parseFloat(a.adv.price) - parseFloat(b.adv.price));
-    allResults.sell.sort((a, b) => parseFloat(b.adv.price) - parseFloat(a.adv.price));
-    
-    // Limit results to prevent overwhelming the client
-    if (allResults.buy.length > 100) allResults.buy = allResults.buy.slice(0, 100);
-    if (allResults.sell.length > 100) allResults.sell = allResults.sell.slice(0, 100);
-    
-    console.log(`Search completed. Found ${allResults.buy.length} BUY and ${allResults.sell.length} SELL matches across ${allResults.metadata.pagesSearched} pages`);
-    
-    return allResults;
-  } catch (error) {
-    console.error(`Error in searchAllByAmount:`, error);
-    throw error;
-  }
-}
+// Removed searchAllByAmount function - no longer needed without paging
 
-// API endpoint for searching across all pages by transaction amount
-app.get('/api/p2p/search-all', async (req, res) => {
-  const asset = req.query.asset || CONFIG.assets[0];
-  const fiat = req.query.fiat || CONFIG.fiatCurrency;
-  const amount = req.query.amount;
-  const fromAmount = req.query.fromAmount;
-  const toAmount = req.query.toAmount;
-  
-  console.log(`Received request for /api/p2p/search-all with asset=${asset}, fiat=${fiat}, amount=${amount}, fromAmount=${fromAmount}, toAmount=${toAmount}`);
-  
-  // Validate that we have at least one of the required parameters
-  if (!amount && !fromAmount && !toAmount) {
-    return res.status(400).json({
-      error: 'Missing required parameters: either amount, fromAmount, or toAmount must be provided',
-      buy: [],
-      sell: [],
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  try {
-    const searchResults = await searchAllByAmount(asset, fiat, { amount, fromAmount, toAmount });
-    
-    // Add extra metadata
-    const responseData = {
-      ...searchResults,
-      metadata: {
-        ...searchResults.metadata,
-        actualRows: {
-          buy: searchResults.buy.length,
-          sell: searchResults.sell.length,
-          total: searchResults.buy.length + searchResults.sell.length
-        }
-      }
-    };
-    
-    // Log response summary
-    console.log(`Search-all response summary: Found ${responseData.metadata.actualRows.total} total records (${responseData.metadata.actualRows.buy} buy, ${responseData.metadata.actualRows.sell} sell) across ${responseData.metadata.pagesSearched} pages`);
-    
-    res.json(responseData);
-  } catch (error) {
-    console.error('Error in search-all:', error);
-    
-    // Send a structured error response
-    res.status(500).json({ 
-      error: 'Failed to search across pages', 
-      message: error.message,
-      timestamp: new Date().toISOString(),
-      buy: [], 
-      sell: [],
-      metadata: {
-        searchType: amount ? 'amount' : 'amount-range',
-        searchValue: amount || { from: fromAmount, to: toAmount },
-        error: true,
-        errorDetails: error.message
-      }
-    });
-  }
-});
+// Remove the search-all endpoint as we no longer support paging
 
 // Start the server
 app.listen(PORT, () => {
@@ -1235,7 +781,7 @@ app.listen(PORT, () => {
   console.log(`- Countries: ${CONFIG.countries.join(', ')}`);
   console.log(`- Payment Methods: ${CONFIG.paymentMethods.join(', ')}`);
   console.log(`- Update Interval: ${CONFIG.updateInterval}ms`);
-  console.log(`- Cache TTL: ${P2P_CACHE.ttl}ms`);
+  // Removed cache TTL log - no longer using caching
   console.log(`- API Timeout: ${API_CONFIG.timeout}ms`);
   
   // Start the decision update schedule with a slight delay
