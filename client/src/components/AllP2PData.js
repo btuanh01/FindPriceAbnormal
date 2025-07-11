@@ -424,16 +424,17 @@ const AllP2PData = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [nextRefresh, setNextRefresh] = useState(15);
-  const [limitFilter, setLimitFilter] = useState('');
-  const [formattedLimitFilter, setFormattedLimitFilter] = useState('');
-  const [appliedFilter, setAppliedFilter] = useState('');
-  const [appliedFormattedFilter, setAppliedFormattedFilter] = useState('');
-  const [isSearchingAll, setIsSearchingAll] = useState(false);
-  const [searchAllResults, setSearchAllResults] = useState({ buy: [], sell: [] });
+  // Removed filter-related state variables - no longer needed
   const [spreadBuy, setSpreadBuy] = useState('100');
   const [formattedSpreadBuy, setFormattedSpreadBuy] = useState('100');
   const [appliedSpreadBuy, setAppliedSpreadBuy] = useState('100');
   const [appliedFormattedSpreadBuy, setAppliedFormattedSpreadBuy] = useState('100');
+  
+  // Min limit filter state
+  const [minLimit, setMinLimit] = useState('');
+  const [formattedMinLimit, setFormattedMinLimit] = useState('');
+  const [appliedMinLimit, setAppliedMinLimit] = useState('');
+  const [appliedFormattedMinLimit, setAppliedFormattedMinLimit] = useState('');
   
   // Previous top 1 merchant from table for automatic comparison
   const [previousTop1Merchant, setPreviousTop1Merchant] = useState(null);
@@ -458,9 +459,10 @@ const AllP2PData = () => {
       const startTime = Date.now();
       
       // Use relative path with proxy configured in package.json
-      console.log(`Đang tải dữ liệu top 30 P2P từ API: /api/p2p/all?asset=${asset}&fiat=${fiat}&onlyBuy=true`);
+      const apiUrl = `/api/p2p/all?asset=${asset}&fiat=${fiat}&minLimit=${appliedMinLimit}`;
+      console.log(`Đang tải dữ liệu top 20 P2P từ API: ${apiUrl}`);
       
-      const response = await fetch(`/api/p2p/all?asset=${asset}&fiat=${fiat}&onlyBuy=true`);
+      const response = await fetch(apiUrl);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -479,7 +481,7 @@ const AllP2PData = () => {
       const data = await response.json();
       const endTime = Date.now();
       const executionTime = endTime - startTime;
-      console.log(`Đã nhận dữ liệu top 30 P2P trong ${executionTime}ms:`, data);
+      console.log(`Đã nhận dữ liệu top 20 P2P trong ${executionTime}ms:`, data);
       
       // Check for errors from server
       if (data.error) {
@@ -524,12 +526,12 @@ const AllP2PData = () => {
       setLastRefreshTime(`${executionTime}ms`);
       setError(null); // Clear any previous errors
     } catch (err) {
-      console.error('Lỗi khi tải dữ liệu top 30 P2P:', err);
+      console.error('Lỗi khi tải dữ liệu top 20 P2P:', err);
       setError(err.message);
     } finally {
       if (!skipLoading) setLoading(false);
     }
-  }, [asset, fiat]);
+  }, [asset, fiat, appliedMinLimit]);
 
   // Function to format input as VND
   const formatInputAsVND = (value) => {
@@ -544,33 +546,7 @@ const AllP2PData = () => {
     }).format(numericValue);
   };
   
-  // Function to handle input change
-  const handleLimitFilterChange = (e) => {
-    const inputValue = e.target.value;
-    
-    // Remove all non-numeric characters for the actual value
-    const numericValue = inputValue.replace(/[^0-9]/g, '');
-    
-    // Update the state variables
-    setLimitFilter(numericValue);
-    setFormattedLimitFilter(formatInputAsVND(numericValue));
-  };
-
-  // Function to apply the limit filter
-  const applyLimitFilter = () => {
-    setAppliedFilter(limitFilter);
-    setAppliedFormattedFilter(formattedLimitFilter);
-  };
-
-  // Function to clear the limit filter
-  const clearLimitFilter = () => {
-    setLimitFilter('');
-    setFormattedLimitFilter('');
-    setAppliedFilter('');
-    setAppliedFormattedFilter('');
-    setSearchAllResults({ buy: [], sell: [] });
-    setError(null);
-  };
+  // Removed filter-related functions - no longer needed
 
   // Function to handle spread buy change
   const handleSpreadBuyChange = (e) => {
@@ -590,7 +566,21 @@ const AllP2PData = () => {
     setAppliedFormattedSpreadBuy(formattedSpreadBuy);
   };
 
-  // Update top 1 merchant from filtered table when data changes (after each refresh)
+  // Function to handle min limit change
+  const handleMinLimitChange = (e) => {
+    const inputValue = e.target.value;
+    const numericValue = inputValue.replace(/[^0-9]/g, '');
+    setMinLimit(numericValue);
+    setFormattedMinLimit(formatInputAsVND(numericValue));
+  };
+
+  // Function to apply the min limit filter
+  const applyMinLimitFilter = () => {
+    setAppliedMinLimit(minLimit);
+    setAppliedFormattedMinLimit(formattedMinLimit);
+  };
+
+  // Update top 1 merchant from data when data changes (after each refresh)
   useEffect(() => {
     const dataToCheck = allP2PData.buy;
     
@@ -616,7 +606,7 @@ const AllP2PData = () => {
         setCurrentTop1Merchant(newTop1Merchant);
       }
     }
-  }, [allP2PData.buy, allP2PData.timestamp, appliedFilter]);
+  }, [allP2PData.buy, allP2PData.timestamp]);
 
   // Function to clear stored merchants and reset
   const clearStoredMerchants = () => {
@@ -624,9 +614,15 @@ const AllP2PData = () => {
     setCurrentTop1Merchant(null);
     setSpreadBuy('100');
     setFormattedSpreadBuy('100');
+    setMinLimit('');
+    setFormattedMinLimit('');
+    setAppliedSpreadBuy('100');
+    setAppliedFormattedSpreadBuy('100');
+    setAppliedMinLimit('');
+    setAppliedFormattedMinLimit('');
     setNotifiedPrices(new Set()); // Clear notification history
     setDiscordEnabled(false); // Disable Discord when clearing
-    console.log('Stored merchants cleared');
+    console.log('Stored merchants and filters cleared');
   };
 
   // Diagnostic function to compare table vs Discord highlighting
@@ -894,45 +890,7 @@ const AllP2PData = () => {
   };
   
   // Function to search across all available pages
-  const searchAllByAmount = async () => {
-    if (!limitFilter) return;
-    
-    try {
-      setIsSearchingAll(true);
-      setLoading(true);
-      setError(null);
-      
-      // Call the special search-all endpoint with the amount filter
-      console.log(`Đang tìm kiếm tất cả trang cho số tiền: ${limitFilter}`);
-      
-      const response = await fetch(`/api/p2p/search-all?asset=${asset}&fiat=${fiat}&amount=${limitFilter}`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        throw new Error(`Server responded with status: ${response.status} - ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log('Đã nhận kết quả tìm kiếm toàn bộ:', data);
-      
-      // Update state with search results
-      setSearchAllResults(data);
-      applyLimitFilter();
-      
-      // If no results were found
-      if (data.buy && data.buy.length === 0) {
-        setError('No listings found across all pages that accept this transaction amount.');
-      }
-    } catch (err) {
-      console.error('Lỗi khi tìm kiếm tất cả trang:', err);
-      setError(err.message);
-      setSearchAllResults({ buy: [], sell: [] });
-    } finally {
-      setLoading(false);
-      setIsSearchingAll(false);
-    }
-  };
+  // Removed searchAllByAmount function - no longer needed without paging
 
   // Combined data fetching and auto-refresh functionality
   useEffect(() => {
@@ -974,29 +932,10 @@ const AllP2PData = () => {
     setNextRefresh(15); // Reset the countdown timer
   };
 
-  // Create filtered data based on currently shown trade type and limit filter
+  // Get data without filtering
   const getFilteredData = () => {
-    // If we have search-all results and we're using a filter, use those results
-    if (appliedFilter && searchAllResults.buy.length > 0) {
-      return searchAllResults.buy; // Always use buy data from search results
-    }
-    
-    // Otherwise, filter the current page data
-    const dataToRender = allP2PData.buy;
-    
-    // Apply limit filter if it's set
-    if (!appliedFilter) return dataToRender || [];
-    
-    const filterAmount = parseFloat(appliedFilter);
-    if (isNaN(filterAmount)) return dataToRender || [];
-    
-    return dataToRender ? dataToRender.filter(item => {
-      const minLimit = parseFloat(item.adv.minSingleTransAmount);
-      const maxLimit = parseFloat(item.adv.maxSingleTransAmount);
-      
-      // Check if the input amount is within the min-max range
-      return filterAmount >= minLimit && filterAmount <= maxLimit;
-    }) : [];
+    // Return the top 20 buy data from server
+    return allP2PData.buy || [];
   };
 
   const filteredData = getFilteredData();
@@ -1160,17 +1099,6 @@ const AllP2PData = () => {
     }
 
     if (!filteredData || filteredData.length === 0) {
-      // Special message if no data after filtering
-      const dataToRender = allP2PData.buy;
-      if (appliedFilter && dataToRender && dataToRender.length > 0) {
-        return (
-          <div className="alert alert-warning" role="alert">
-            <i className="bi bi-exclamation-triangle-fill me-2"></i>
-            No listings found that accept transactions of ₫{appliedFormattedFilter}. Try a different amount.
-          </div>
-        );
-      }
-      
       // General no data message
       return (
         <div className="alert alert-info" role="alert">
@@ -1270,10 +1198,10 @@ const AllP2PData = () => {
             <div>
               <h4 className="mb-0 d-flex align-items-center">
                 <i className="bi bi-lightning-fill me-2 text-warning"></i>
-                Top 30 USDT/VND P2P Data (Ultra-Fast)
+                Top 20 USDT/VND P2P Data (Ultra-Fast)
               </h4>
               <small className="text-muted mt-1">
-                Showing top 30 lowest buy prices - optimized for speed (1 API call)
+                Showing top 20 lowest buy prices - optimized for speed (1 API call)
               </small>
             </div>
             
@@ -1307,139 +1235,9 @@ const AllP2PData = () => {
                   Filter Options
                 </h5>
                 
-                {/* First Row - Transaction Amount and Discord */}
+                {/* First Row - Merchant Monitoring and Refresh */}
                 <Row className="mb-3 compact-filter-row">
-                  <Col md={8}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="d-flex align-items-center">
-                        <i className="bi bi-cash-coin me-2 text-primary"></i>
-                        <span>Transaction Amount</span>
-                      </Form.Label>
-                      <div className="input-group filter-input-group">
-                        <span className="input-group-text filter-currency-symbol">₫</span>
-                        <Form.Control
-                          type="text"
-                          placeholder="Enter amount..."
-                          value={formattedLimitFilter}
-                          onChange={handleLimitFilterChange}
-                          disabled={loading}
-                          className="text-end filter-amount-input"
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              applyLimitFilter();
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="primary"
-                          onClick={applyLimitFilter}
-                          disabled={loading || !limitFilter}
-                          className="filter-search-btn"
-                          title="Search current page"
-                        >
-                          <i className="bi bi-search"></i>
-                        </Button>
-                        {appliedFilter && (
-                          <Button 
-                            variant="outline-secondary" 
-                            onClick={clearLimitFilter}
-                            disabled={loading}
-                            className="filter-clear-btn"
-                            title="Clear filter"
-                          >
-                            <i className="bi bi-x"></i>
-                          </Button>
-                        )}
-                      </div>
-                    </Form.Group>
-                  </Col>
-                  
                   <Col md={3}>
-                    <Form.Group className="mb-3">
-                                              <Form.Label className="d-flex align-items-center">
-                          <i className="bi bi-discord me-2 text-primary"></i>
-                        <span>Discord Alerts (All Listings)</span>
-                        </Form.Label>
-                      <div className="d-flex flex-column p-2 bg-light rounded">
-                        <div className="d-flex align-items-center justify-content-between mb-1">
-                        <Badge 
-                          bg={discordEnabled ? "success" : "danger"} 
-                          className="me-2"
-                        >
-                          {discordEnabled ? "ON" : "OFF"}
-                        </Badge>
-                        <Form.Check 
-                          type="switch"
-                          id="discord-toggle"
-                          checked={discordEnabled}
-                          onChange={(e) => setDiscordEnabled(e.target.checked)}
-                          className="discord-toggle"
-                        />
-                        </div>
-                        <Button
-                          variant="outline-primary"
-                          size="sm"
-                          onClick={testDiscordWebhook}
-                          className="mb-1 me-1"
-                          title="Test Discord webhook"
-                        >
-                          <i className="bi bi-send me-1"></i>
-                          Test Discord
-                        </Button>
-                        <Button
-                          variant="outline-info"
-                          size="sm"
-                          onClick={debugHighlightingLogic}
-                          className="mb-1"
-                          title="Debug highlighting logic"
-                        >
-                          <i className="bi bi-bug me-1"></i>
-                          Debug
-                        </Button>
-                        {discordEnabled && (
-                          <small className="text-muted">
-                            {previousTop1Merchant ? 
-                              `Monitoring vs ${previousTop1Merchant.name}` : 
-                              'Waiting for previous top 1 merchant...'}
-                          </small>
-                        )}
-                        {discordEnabled && !previousTop1Merchant && (
-                          <small className="text-warning">
-                            <i className="bi bi-exclamation-triangle me-1"></i>
-                            Need 2 refreshes to start monitoring
-                          </small>
-                        )}
-                      </div>
-                    </Form.Group>
-                  </Col>
-                  
-                  <Col md={1}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="d-flex align-items-center">
-                        <i className="bi bi-arrow-clockwise me-1 text-primary"></i>
-                      </Form.Label>
-                      <Button 
-                        variant="primary" 
-                        onClick={handleRefresh} 
-                        disabled={loading}
-                        className="w-100 filter-search-btn"
-                        size="sm"
-                        title="Refresh Data"
-                      >
-                        {loading ? (
-                          <Spinner animation="border" size="sm" />
-                        ) : (
-                          <i className="bi bi-arrow-clockwise"></i>
-                        )}
-                      </Button>
-                    </Form.Group>
-                  </Col>
-                </Row>
-
-                                {/* Second Row - Automatic Price Monitoring */}
-                <Row className="mb-3 compact-filter-row">
-                  <Col md={4}>
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-clock-history me-2 text-info"></i>
@@ -1458,7 +1256,7 @@ const AllP2PData = () => {
                     </Form.Group>
                   </Col>
                   
-                  <Col md={4}>
+                  <Col md={3}>
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-arrow-down-circle me-2 text-success"></i>
@@ -1477,7 +1275,7 @@ const AllP2PData = () => {
                     </Form.Group>
                   </Col>
                   
-                  <Col md={4}>
+                  <Col md={3}>
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-rulers me-2 text-warning"></i>
@@ -1508,15 +1306,6 @@ const AllP2PData = () => {
                         >
                           <i className="bi bi-check-circle"></i>
                         </Button>
-                        <Button 
-                          variant="outline-danger" 
-                          onClick={clearStoredMerchants}
-                          disabled={loading}
-                          className="filter-clear-btn"
-                          title="Reset merchant monitoring"
-                        >
-                          <i className="bi bi-x-circle"></i>
-                        </Button>
                       </div>
                       {appliedSpreadBuy && appliedSpreadBuy !== '100' && (
                         <div className="mt-2">
@@ -1529,9 +1318,100 @@ const AllP2PData = () => {
                       )}
                     </Form.Group>
                   </Col>
+                  
+                  <Col md={2}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="d-flex align-items-center">
+                        <i className="bi bi-bar-chart me-2 text-primary"></i>
+                        <span>Min Limit</span>
+                      </Form.Label>
+                      <div className="input-group filter-input-group">
+                        <span className="input-group-text filter-currency-symbol">₫</span>
+                        <Form.Control
+                          type="text"
+                          placeholder="All limits"
+                          value={formattedMinLimit}
+                          onChange={handleMinLimitChange}
+                          disabled={loading}
+                          className="text-end filter-amount-input"
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              applyMinLimitFilter();
+                            }
+                          }}
+                        />
+                        <Button 
+                          variant="primary"
+                          onClick={applyMinLimitFilter}
+                          disabled={loading}
+                          className="filter-search-btn"
+                          title="Apply Min Limit Filter"
+                        >
+                          <i className="bi bi-check-circle"></i>
+                        </Button>
+                      </div>
+                      {appliedMinLimit && appliedMinLimit !== '' && (
+                        <div className="mt-2">
+                          <Badge bg="info" className="spread-badge">
+                            <i className="bi bi-check-circle me-1"></i>
+                            <span className="me-1">Min limit:</span> 
+                            <span className="fw-bold">₫{appliedFormattedMinLimit}</span>
+                          </Badge>
+                        </div>
+                      )}
+                      {appliedMinLimit === '' && (
+                        <div className="mt-2">
+                          <Badge bg="secondary" className="spread-badge">
+                            <i className="bi bi-info-circle me-1"></i>
+                            <span>All limits (no filter)</span>
+                          </Badge>
+                        </div>
+                      )}
+                    </Form.Group>
+                  </Col>
+
+                  <Col md={1}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="d-flex align-items-center">
+                        <i className="bi bi-arrow-clockwise me-1 text-primary"></i>
+                        <span>Refresh</span>
+                      </Form.Label>
+                      <Button 
+                        variant="primary" 
+                        onClick={handleRefresh} 
+                        disabled={loading}
+                        className="w-100 filter-search-btn"
+                        size="sm"
+                        title="Refresh Data"
+                      >
+                        {loading ? (
+                          <Spinner animation="border" size="sm" />
+                        ) : (
+                          <i className="bi bi-arrow-clockwise"></i>
+                        )}
+                      </Button>
+                    </Form.Group>
+                  </Col>
                 </Row>
 
-                {/* Third Row - View Controls and Search */}
+                {/* Second Row - Clear Button */}
+                <Row className="mb-3 compact-filter-row">
+                  <Col md={12}>
+                    <Button 
+                      variant="outline-danger" 
+                      onClick={clearStoredMerchants}
+                      disabled={loading}
+                      className="filter-clear-btn"
+                      title="Reset all filters and merchant monitoring"
+                    >
+                      <i className="bi bi-x-circle me-2"></i>
+                      Reset All Filters
+                    </Button>
+                  </Col>
+                </Row>
+
+                {/* Third Row - View Controls and Discord Alerts */}
                 <Row className="mb-2 compact-filter-row">
                   <Col md={6}>
                     <Form.Group className="mb-3">
@@ -1545,43 +1425,63 @@ const AllP2PData = () => {
                       </div>
                     </Form.Group>
                   </Col>
-                  <Col md={4}>
+                  <Col md={6}>
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
-                        <i className="bi bi-search me-2 text-primary"></i>
-                        <span>Search All Pages</span>
+                        <i className="bi bi-discord me-2 text-primary"></i>
+                        <span>Discord Alerts (All Listings)</span>
                       </Form.Label>
-                      <Button
-                        variant="outline-primary"
-                        onClick={searchAllByAmount}
-                        disabled={loading || !limitFilter || isSearchingAll}
-                        className="w-100 search-all-btn"
-                        size="sm"
-                      >
-                        {isSearchingAll ? (
-                          <>
-                            <Spinner animation="border" size="sm" className="me-1" />
-                            Searching...
-                          </>
-                        ) : (
-                          <>
-                            <i className="bi bi-search me-1"></i>
-                            Search All Pages
-                          </>
+                      <div className="d-flex flex-column p-2 bg-light rounded">
+                        <div className="d-flex align-items-center justify-content-between mb-1">
+                          <Badge 
+                            bg={discordEnabled ? "success" : "danger"} 
+                            className="me-2"
+                          >
+                            {discordEnabled ? "ON" : "OFF"}
+                          </Badge>
+                          <Form.Check 
+                            type="switch"
+                            id="discord-toggle"
+                            checked={discordEnabled}
+                            onChange={(e) => setDiscordEnabled(e.target.checked)}
+                            className="discord-toggle"
+                          />
+                        </div>
+                        <div className="d-flex gap-2">
+                          <Button
+                            variant="outline-primary"
+                            size="sm"
+                            onClick={testDiscordWebhook}
+                            className="flex-grow-1"
+                            title="Test Discord webhook"
+                          >
+                            <i className="bi bi-send me-1"></i>
+                            Test Discord
+                          </Button>
+                          <Button
+                            variant="outline-info"
+                            size="sm"
+                            onClick={debugHighlightingLogic}
+                            className="flex-grow-1"
+                            title="Debug highlighting logic"
+                          >
+                            <i className="bi bi-bug me-1"></i>
+                            Debug
+                          </Button>
+                        </div>
+                        {discordEnabled && (
+                          <small className="text-muted mt-2">
+                            {previousTop1Merchant ? 
+                              `Monitoring vs ${previousTop1Merchant.name}` : 
+                              'Waiting for previous top 1 merchant...'}
+                          </small>
                         )}
-                      </Button>
-                    </Form.Group>
-                  </Col>
-                  <Col md={2}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="d-flex align-items-center">
-                        <i className="bi bi-info-circle me-2 text-primary"></i>
-                        <span>Data Info</span>
-                      </Form.Label>
-                      <div className="d-flex align-items-center justify-content-center p-2 bg-light rounded">
-                        <small className="text-muted">
-                          <strong>USDT/VND</strong>
-                        </small>
+                        {discordEnabled && !previousTop1Merchant && (
+                          <small className="text-warning mt-2">
+                            <i className="bi bi-exclamation-triangle me-1"></i>
+                            Need 2 refreshes to start monitoring
+                          </small>
+                        )}
                       </div>
                     </Form.Group>
                   </Col>
@@ -1591,25 +1491,6 @@ const AllP2PData = () => {
           </div>
         </Card.Header>
         <Card.Body>
-          {appliedFilter && !isNaN(parseFloat(appliedFilter)) && (
-            <div className="active-filter-indicator mb-3">
-              <Badge bg="primary" className="filter-badge p-3">
-                <i className="bi bi-funnel-fill me-2"></i>
-                <span className="me-1">Active filter:</span> 
-                <span className="fw-bold">₫{appliedFormattedFilter}</span>
-                <Button 
-                  variant="link" 
-                  size="sm" 
-                  className="text-white p-0 ms-3" 
-                  onClick={clearLimitFilter}
-                  title="Clear filter"
-                >
-                  <i className="bi bi-x-circle-fill"></i>
-                </Button>
-              </Badge>
-            </div>
-          )}
-          
           {renderDataTable()}
           
           <div className="d-flex justify-content-center align-items-center mt-3">
@@ -1619,19 +1500,7 @@ const AllP2PData = () => {
                   Last updated: {new Date(allP2PData.timestamp).toLocaleString()}
                   {allP2PData.metadata && (
                     <span className="ms-2">
-                      • Showing Buy Orders: {
-                        appliedFilter ? 
-                          filteredData.length : 
-                          allP2PData.buy.length
-                      } of top 30 lowest buy prices
-                      {appliedFilter && (
-                        <span className="text-primary">
-                          {searchAllResults.buy.length > 0 ? 
-                            ` (searched across all pages)` :
-                            ` (filtered from top 30)`
-                          }
-                        </span>
-                      )}
+                      • Showing Buy Orders: {allP2PData.buy.length} of top 20 lowest buy prices
                     </span>
                   )}
                   {allP2PData.metadata?.limitInfo && (
