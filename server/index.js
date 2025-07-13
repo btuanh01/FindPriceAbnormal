@@ -15,25 +15,11 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Store for latest market decision
-let latestDecision = {
-  decision: 'HOLD',
-  confidence: 'LOW',
-  reason: 'Đang khởi động...',
-  metrics: {
-    avgBuyPrice: null,
-    avgSellPrice: null,
-    liquidity: null,
-    spread: null,
-    merchantHealth: null
-  },
-  timestamp: new Date().toISOString()
-};
+
 
 // Configuration using environment variables
 const CONFIG = {
   updateInterval: parseInt(process.env.UPDATE_INTERVAL) || 60000, // 1 minute
-  decisionInterval: parseInt(process.env.DECISION_INTERVAL) || 60000, // 1 minute
   deviationThreshold: parseFloat(process.env.DEVIATION_THRESHOLD) || 0.5, // Default to 0.5% - balanced
   assets: [process.env.DEFAULT_ASSET || 'USDT'],
   fiatCurrency: process.env.DEFAULT_FIAT || 'VND',
@@ -185,196 +171,34 @@ async function fetchTop20LowestPrices(asset = CONFIG.assets[0], fiat = CONFIG.fi
   }
 }
 
-// Function to format price with proper separators
-function formatPrice(price) {
-  return new Intl.NumberFormat('vi-VN', {
-    style: 'currency',
-    currency: 'VND',
-    maximumFractionDigits: 0
-  }).format(price);
-}
-
-// Function to analyze market data and generate strategic recommendations
-async function generateMarketDecision() {
-  console.log('Generating market decision...');
-  const timestamp = new Date().toISOString();
-  
+// Function to fetch top 50 buy/sell data with specific parameters
+async function fetchTop50BuySellData(asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency, countries = ['VN'], payTypes = ['Bank', 'BankTransferVietnam']) {
   try {
-    // 1. Fetch data for analysis
-    const asset = CONFIG.assets[0]; // Use the first asset from config
+    console.log(`Fetching top 50 buy/sell data for ${asset} in ${fiat} for countries: ${countries.join(', ')} with payment methods: ${payTypes.join(', ')}`);
     
-    // Fetch both BUY and SELL advertisements
-    const buyAds = await fetchP2PAdvertisements(asset, 'BUY');
-    const sellAds = await fetchP2PAdvertisements(asset, 'SELL');
+    const startTime = Date.now();
     
-    if (!buyAds || !sellAds || buyAds.length === 0 || sellAds.length === 0) {
-      return {
-        decision: 'HOLD',
-        confidence: 'LOW',
-        reason: 'Không đủ dữ liệu P2P',
-        metrics: {
-          avgBuyPrice: null,
-          avgSellPrice: null,
-          liquidity: null,
-          spread: null,
-          merchantHealth: null
-        },
-        timestamp
-      };
-    }
+    // Make two separate API calls using the exact same pattern as the working fetchTop20LowestPrices function
     
-    // 2. Calculate metrics for analysis
-    
-    // 2.1 Calculate average prices
-    let totalBuyPrice = 0;
-    let totalSellPrice = 0;
-    let totalBuyVolume = 0;
-    let totalSellVolume = 0;
-    let reliableMerchants = 0;
-    let totalMerchants = buyAds.length + sellAds.length;
-    
-    // Process BUY ads (people buying USDT)
-    for (const ad of buyAds) {
-      const p2pPrice = parseFloat(ad.adv.price);
-      const availableAmount = parseFloat(ad.adv.maxSingleTransAmount);
-      
-      totalBuyPrice += p2pPrice;
-      totalBuyVolume += availableAmount;
-      
-      // Count reliable merchants (completion rate > 98%)
-      if (ad.advertiser.monthFinishRate >= 0.98) {
-        reliableMerchants++;
-      }
-    }
-    
-    // Process SELL ads (people selling USDT)
-    for (const ad of sellAds) {
-      const p2pPrice = parseFloat(ad.adv.price);
-      const availableAmount = parseFloat(ad.adv.maxSingleTransAmount);
-      
-      totalSellPrice += p2pPrice;
-      totalSellVolume += availableAmount;
-      
-      // Count reliable merchants (completion rate > 98%)
-      if (ad.advertiser.monthFinishRate >= 0.98) {
-        reliableMerchants++;
-      }
-    }
-    
-    // Calculate averages
-    const avgBuyPrice = totalBuyPrice / buyAds.length;
-    const avgSellPrice = totalSellPrice / sellAds.length;
-    const totalLiquidity = totalBuyVolume + totalSellVolume;
-    
-    // 2.2 Calculate market spread
-    // Get the lowest sell price and highest buy price
-    const lowestSellPrice = Math.min(...sellAds.map(ad => parseFloat(ad.adv.price)));
-    const highestBuyPrice = Math.max(...buyAds.map(ad => parseFloat(ad.adv.price)));
-    const spread = ((lowestSellPrice - highestBuyPrice) / avgBuyPrice) * 100;
-    
-    // 2.3 Calculate merchant health score
-    const merchantHealthScore = (reliableMerchants / totalMerchants) * 100;
-    
-    // 3. Make decision based on metrics
-    let decision = 'HOLD';
-    let confidence = 'MEDIUM';
-    let reason = '';
-    
-    // Significant price difference indicating market opportunities
-    const priceSpreadThreshold = CONFIG.deviationThreshold; // Use config threshold
-    
-    // BUY USDT recommendation (if sell prices are low relative to buy prices)
-    if (avgSellPrice < avgBuyPrice * 0.995 && 
-        totalSellVolume > 5000 && 
-        Math.abs(spread) > priceSpreadThreshold) {
-      
-      decision = 'BUY';
-      confidence = (avgBuyPrice - avgSellPrice) / avgBuyPrice > 0.01 ? 'HIGH' : 'MEDIUM';
-      reason = 'Giá bán USDT thấp hơn giá mua đáng kể';
-    }
-    // SELL USDT recommendation (if buy prices are high relative to sell prices)
-    else if (avgBuyPrice > avgSellPrice * 1.005 && 
-             totalBuyVolume > 5000 && 
-             Math.abs(spread) > priceSpreadThreshold) {
-      
-      decision = 'SELL';
-      confidence = (avgBuyPrice - avgSellPrice) / avgSellPrice > 0.01 ? 'HIGH' : 'MEDIUM';
-      reason = 'Giá mua USDT cao hơn giá bán đáng kể';
-    }
-    // HOLD recommendation
-    else {
-      decision = 'HOLD';
-      if (Math.abs(avgBuyPrice - avgSellPrice) / avgBuyPrice < 0.002) {
-        reason = 'Thị trường ổn định, không có cơ hội rõ ràng';
-        confidence = 'HIGH';
-      } else if (totalLiquidity < 5000) {
-        reason = 'Thanh khoản thị trường thấp';
-        confidence = 'MEDIUM';
-      } else {
-        reason = 'Điều kiện thị trường chưa rõ ràng';
-        confidence = 'LOW';
-      }
-    }
-    
-    // 4. Return decision data
-    return {
-      decision,
-      confidence,
-      reason,
-      metrics: {
-        avgBuyPrice: formatPrice(avgBuyPrice),
-        avgSellPrice: formatPrice(avgSellPrice),
-        priceSpread: ((avgBuyPrice - avgSellPrice) / avgBuyPrice * 100).toFixed(2) + '%',
-        liquidity: formatPrice(totalLiquidity),
-        buyLiquidity: formatPrice(totalBuyVolume),
-        sellLiquidity: formatPrice(totalSellVolume),
-        spread: spread.toFixed(2) + '%',
-        merchantHealth: merchantHealthScore.toFixed(0) + '%'
-      },
-      timestamp
-    };
-  } catch (error) {
-    console.error('Error generating market decision:', error);
-    return {
-      decision: 'HOLD',
-      confidence: 'LOW',
-      reason: 'Lỗi phân tích thị trường',
-      metrics: {
-        avgBuyPrice: null,
-        avgSellPrice: null,
-        liquidity: null,
-        spread: null,
-        merchantHealth: null
-      },
-      timestamp
-    };
-  }
-}
-
-// Function to fetch P2P advertisements
-async function fetchP2PAdvertisements(asset, tradeType) {
-  try {
-    console.log(`Fetching P2P ads for ${asset} (${tradeType}) in Vietnam using VND with payment methods: ${CONFIG.paymentMethods.join(', ')}`);
-    
-    // Try with specific payment methods
-    let payload = {
+    // First, get BUY data (use exact same payload as working function)
+    const buyPayload = {
       page: 1,
       rows: 20,
       asset,
-      tradeType,
-      fiat: CONFIG.fiatCurrency,
+      tradeType: 'BUY',
+      fiat,
       publisherType: null,
       merchantCheck: false,
-      payTypes: CONFIG.paymentMethods,
-      countries: CONFIG.countries,
+      payTypes: [],
+      countries: [],
       transAmount: ""
     };
     
-    console.log('P2P API request payload (with specific payment methods):', JSON.stringify(payload));
+    console.log('Binance API request payload for BUY:', JSON.stringify(buyPayload));
     
-    let response = await axios.post(
+    const buyResponse = await axios.post(
       API_CONFIG.binanceApiUrl, 
-      payload,
+      buyPayload,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -383,74 +207,265 @@ async function fetchP2PAdvertisements(asset, tradeType) {
         timeout: API_CONFIG.timeout
       }
     );
-
-    let adsData = response.data.data || [];
-    console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with specified payment methods`);
-
-    // If no data with specific payment methods, try with all payment methods
-    if (adsData.length === 0) {
-      console.log('No ads found with specified payment methods, trying with all payment methods');
-      
-      payload = {
-        page: 1,
-        rows: 20,
-        asset,
-        tradeType,
-        fiat: CONFIG.fiatCurrency,
-        publisherType: null,
-        merchantCheck: false,
-        payTypes: [], // No payment method filter
-        countries: CONFIG.countries,
-        transAmount: ""
-      };
-      
-      console.log('P2P API request payload (all payment methods):', JSON.stringify(payload));
-      
-      response = await axios.post(
-        API_CONFIG.binanceApiUrl, 
-        payload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': API_CONFIG.userAgent
-          },
-          timeout: API_CONFIG.timeout
-        }
-      );
-      
-      adsData = response.data.data || [];
-      console.log(`Received ${adsData.length} P2P ads for ${asset} (${tradeType}) with all payment methods`);
-      
-      // We'll filter for our specific payment methods in the anomaly detection function
-    }
-
-    // Log all payment methods found
-    if (adsData.length > 0) {
-      const allPaymentMethods = new Set();
-      adsData.forEach(ad => {
-        if (ad.adv.tradeMethods) {
-          ad.adv.tradeMethods.forEach(method => {
-            allPaymentMethods.add(method.identifier);
-          });
-        }
-      });
-      
-      console.log('All available payment methods:', Array.from(allPaymentMethods));
-      
-      if (adsData.length > 0) {
-        console.log('Sample ad structure:', JSON.stringify(adsData[0], null, 2).substring(0, 500) + '...');
+    
+    console.log(`BUY request completed with status: ${buyResponse.status}`);
+    
+    // Add a small delay to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Then, get SELL data (use exact same payload as BUY, just change tradeType)
+    const sellPayload = {
+      page: 1,
+      rows: 20,
+      asset,
+      tradeType: 'SELL',
+      fiat,
+      publisherType: null,
+      merchantCheck: false,
+      payTypes: [],
+      countries: [],
+      transAmount: ""
+    };
+    
+    console.log('Binance API request payload for SELL:', JSON.stringify(sellPayload));
+    
+    const sellResponse = await axios.post(
+      API_CONFIG.binanceApiUrl, 
+      sellPayload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': API_CONFIG.userAgent
+        },
+        timeout: API_CONFIG.timeout
       }
-    } else {
-      console.log('P2P API response:', JSON.stringify(response.data, null, 2));
+    );
+    
+    console.log(`SELL request completed with status: ${sellResponse.status}`);
+
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    
+    console.log(`Binance API responded in ${executionTime}ms`);
+
+    // Check for API errors in BUY response (same as working function)
+    if (buyResponse.data && buyResponse.data.code && buyResponse.data.code !== '000000') {
+      console.error('Binance API returned error for BUY:', buyResponse.data);
+      
+      let errorMessage = 'Binance API Error (BUY)';
+      if (buyResponse.data.code === '000002') {
+        errorMessage = 'Invalid parameters sent to Binance API (BUY)';
+      } else if (buyResponse.data.message) {
+        errorMessage = `Binance API Error (BUY): ${buyResponse.data.message}`;
+      }
+      
+      return {
+        buy: [],
+        sell: [],
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'binance_api_error',
+          dataType: 'top20_buy_sell',
+          recordCount: 0
+        }
+      };
     }
     
-    return adsData;
-  } catch (error) {
-    console.error(`Error fetching P2P ads for ${asset}:`, error.message);
-    if (error.response) {
-      console.error('Error response:', error.response.data);
+    // Check for API errors in SELL response (same as working function)
+    if (sellResponse.data && sellResponse.data.code && sellResponse.data.code !== '000000') {
+      console.error('Binance API returned error for SELL:', sellResponse.data);
+      
+      let errorMessage = 'Binance API Error (SELL)';
+      if (sellResponse.data.code === '000002') {
+        errorMessage = 'Invalid parameters sent to Binance API (SELL)';
+      } else if (sellResponse.data.message) {
+        errorMessage = `Binance API Error (SELL): ${sellResponse.data.message}`;
+      }
+      
+      return {
+        buy: [],
+        sell: [],
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'binance_api_error',
+          dataType: 'top20_buy_sell',
+          recordCount: 0
+        }
+      };
     }
-    return [];
+    
+    // Check if responses have expected structure (same as working function)
+    if (!buyResponse.data || !buyResponse.data.data || !Array.isArray(buyResponse.data.data)) {
+      console.error('Unexpected response structure from Binance API (BUY)');
+      return {
+        buy: [],
+        sell: [],
+        error: 'Unexpected response structure from Binance API (BUY)',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'invalid_response',
+          dataType: 'top20_buy_sell',
+          recordCount: 0
+        }
+      };
+    }
+    
+    if (!sellResponse.data || !sellResponse.data.data || !Array.isArray(sellResponse.data.data)) {
+      console.error('Unexpected response structure from Binance API (SELL)');
+      return {
+        buy: [],
+        sell: [],
+        error: 'Unexpected response structure from Binance API (SELL)',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          executionTime: `${executionTime}ms`,
+          errorType: 'invalid_response',
+          dataType: 'top20_buy_sell',
+          recordCount: 0
+        }
+      };
+    }
+    
+    // Extract data
+    let buyData = buyResponse.data.data || [];
+    let sellData = sellResponse.data.data || [];
+    
+    console.log(`Received ${buyData.length} buy advertisements and ${sellData.length} sell advertisements`);
+    
+    // Filter for specific payment methods since we used empty arrays in the API call
+    console.log('Filtering for specific payment methods:', payTypes);
+    console.log('All data available - Countries filter will be applied more flexibly');
+    
+    // Filter buy data - be more flexible with payment methods to ensure we get enough results
+    buyData = buyData.filter(ad => {
+      // Check payment methods - be more flexible
+      if (!ad.adv.tradeMethods || ad.adv.tradeMethods.length === 0) {
+        return false; // Must have some payment method
+      }
+      
+      // Look for any payment method that contains our target payment types
+      const hasPaymentMethod = ad.adv.tradeMethods.some(method => {
+        const methodId = method.identifier.toLowerCase();
+        const methodName = method.tradeMethodName.toLowerCase();
+        
+        return payTypes.some(payType => {
+          const lowerPayType = payType.toLowerCase();
+          return methodId.includes(lowerPayType) || 
+                 methodName.includes(lowerPayType) ||
+                 methodId.includes('bank') || 
+                 methodName.includes('bank') ||
+                 methodId.includes('transfer') ||
+                 methodName.includes('transfer');
+        });
+      });
+      
+      return hasPaymentMethod;
+    });
+    
+    // Filter sell data - same flexible approach
+    sellData = sellData.filter(ad => {
+      // Check payment methods - be more flexible
+      if (!ad.adv.tradeMethods || ad.adv.tradeMethods.length === 0) {
+        return false; // Must have some payment method
+      }
+      
+      // Look for any payment method that contains our target payment types
+      const hasPaymentMethod = ad.adv.tradeMethods.some(method => {
+        const methodId = method.identifier.toLowerCase();
+        const methodName = method.tradeMethodName.toLowerCase();
+        
+        return payTypes.some(payType => {
+          const lowerPayType = payType.toLowerCase();
+          return methodId.includes(lowerPayType) || 
+                 methodName.includes(lowerPayType) ||
+                 methodId.includes('bank') || 
+                 methodName.includes('bank') ||
+                 methodId.includes('transfer') ||
+                 methodName.includes('transfer');
+        });
+      });
+      
+      return hasPaymentMethod;
+    });
+    
+    console.log(`After filtering by payment methods: ${buyData.length} buy ads, ${sellData.length} sell ads`);
+    
+    // If we still don't have enough data, be even more flexible
+    if (buyData.length < 20) {
+      console.log(`Not enough buy data (${buyData.length}), using all available buy data`);
+      buyData = buyResponse.data.data || [];
+    }
+    
+    if (sellData.length < 20) {
+      console.log(`Not enough sell data (${sellData.length}), using all available sell data`);
+      sellData = sellResponse.data.data || [];
+    }
+    
+    // Sort buy data by price (lowest first)
+    const sortedBuyData = buyData.sort((a, b) => parseFloat(a.adv.price) - parseFloat(b.adv.price));
+    
+    // Sort sell data by price (highest first)
+    const sortedSellData = sellData.sort((a, b) => parseFloat(b.adv.price) - parseFloat(a.adv.price));
+    
+    // Get top 20 of each to ensure consistent results
+    const top20Buy = sortedBuyData.slice(0, 20);
+    const top20Sell = sortedSellData.slice(0, 20);
+    
+    console.log(`Returning top ${top20Buy.length} lowest buy prices and top ${top20Sell.length} highest sell prices`);
+    
+    return {
+      buy: top20Buy,
+      sell: top20Sell,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        executionTime: `${executionTime}ms`,
+        dataType: 'top20_buy_sell',
+        recordCount: top20Buy.length + top20Sell.length,
+        description: `Top ${top20Buy.length} lowest buy prices and top ${top20Sell.length} highest sell prices for ${countries.join(', ')} with payment methods: ${payTypes.join(', ')}`,
+        cached: false,
+        countries: countries,
+        payTypes: payTypes,
+        apiFiltered: true
+      }
+    };
+    
+  } catch (error) {
+    console.error(`Error fetching top 50 buy/sell data for ${asset}:`, error.message);
+    
+    let errorType = 'unknown_error';
+    let errorMessage = error.message;
+    
+    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+      errorType = 'network_error';
+      errorMessage = 'Cannot connect to Binance API. Please check your internet connection.';
+    } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      errorType = 'timeout_error';
+      errorMessage = 'Request to Binance API timed out. Please try again.';
+    } else if (error.response?.status === 403) {
+      errorType = 'forbidden_error';
+      errorMessage = 'Access to Binance API is restricted.';
+    } else if (error.response?.status === 429) {
+      errorType = 'rate_limit_error';
+      errorMessage = 'Too many requests to Binance API. Please wait and try again.';
+    }
+    
+    return {
+      buy: [],
+      sell: [],
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        executionTime: 'failed',
+        errorType,
+        dataType: 'top50_buy_sell',
+        recordCount: 0
+      }
+    };
   }
 }
 
@@ -490,46 +505,7 @@ app.put('/api/config', (req, res) => {
   }
 });
 
-// Diagnostic endpoint to see raw P2P ads
-app.get('/api/rawdata', async (req, res) => {
-  try {
-    const asset = CONFIG.assets[0]; // Use the first asset from config
-    const tradeType = req.query.type || 'BUY'; // Default to BUY
-    const ads = await fetchP2PAdvertisements(asset, tradeType);
-    
-    // Extract payment methods
-    const paymentMethods = new Set();
-    ads.forEach(ad => {
-      if (ad.adv.tradeMethods) {
-        ad.adv.tradeMethods.forEach(method => {
-          paymentMethods.add(method.identifier);
-        });
-      }
-    });
-    
-    res.json({
-      count: ads.length,
-      paymentMethods: Array.from(paymentMethods),
-      data: ads.slice(0, 5) // Only send first 5 for brevity
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-// API endpoint for market decision
-app.get('/api/decision', async (req, res) => {
-  try {
-    const decision = await generateMarketDecision();
-    res.json(decision);
-  } catch (error) {
-    console.error('Error in decision endpoint:', error);
-    res.status(500).json({ 
-      error: 'Không thể tạo quyết định', 
-      message: error.message 
-    });
-  }
-});
 
 // Create endpoint for fetching BTC trend
 app.get('/api/btc-trend', async (req, res) => {
@@ -701,6 +677,47 @@ app.get('/api/p2p/all', async (req, res) => {
   }
 });
 
+// New API endpoint for top 50 buy/sell data
+app.get('/api/p2p/buy-sell-top50', async (req, res) => {
+  try {
+    const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency } = req.query;
+    
+    console.log(`Received request for /api/p2p/buy-sell-top50 with asset=${asset}, fiat=${fiat} - fetching top 50 buy/sell data`);
+    
+    // Use fixed parameters for Vietnam with Bank payment methods
+    const countries = ['VN'];
+    const payTypes = ['Bank', 'BankTransferVietnam'];
+    
+    const top50Data = await fetchTop50BuySellData(asset, fiat, countries, payTypes);
+    
+    res.json({
+      ...top50Data,
+      metadata: {
+        ...top50Data.metadata,
+        buyDescription: `Top 20 lowest buy prices for VN with payment methods: ${payTypes.join(', ')}`,
+        sellDescription: `Top 20 highest sell prices for VN with payment methods: ${payTypes.join(', ')}`,
+        recordCounts: {
+          buy: top50Data.buy?.length || 0,
+          sell: top50Data.sell?.length || 0,
+          total: (top50Data.buy?.length || 0) + (top50Data.sell?.length || 0)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching top 50 buy/sell data:', error);
+    res.status(500).json({
+      buy: [],
+      sell: [],
+      error: error.message,
+      metadata: {
+        dataType: 'top20_buy_sell',
+        error: true,
+        executionTime: 'failed'
+      }
+    });
+  }
+});
+
 // Add a simple test endpoint to check Binance API connectivity
 app.get('/api/test/binance', async (req, res) => {
   const { asset = CONFIG.assets[0], fiat = CONFIG.fiatCurrency } = req.query;
@@ -752,24 +769,9 @@ app.get('/api/test/binance', async (req, res) => {
   }
 });
 
-// Scheduled task to update market decision
-async function scheduleDecisionUpdate() {
-  try {
-    const decision = await generateMarketDecision();
-    latestDecision = decision;
-    
-    console.log(`Market decision updated: ${decision.decision} (${decision.confidence})`);
-  } catch (error) {
-    console.error('Error updating market decision:', error);
-  }
-  
-  // Schedule next update
-  setTimeout(scheduleDecisionUpdate, CONFIG.decisionInterval);
-}
 
-// Removed searchAllByAmount function - no longer needed without paging
 
-// Remove the search-all endpoint as we no longer support paging
+
 
 // Start the server
 app.listen(PORT, () => {
@@ -783,7 +785,4 @@ app.listen(PORT, () => {
   console.log(`- Update Interval: ${CONFIG.updateInterval}ms`);
   // Removed cache TTL log - no longer using caching
   console.log(`- API Timeout: ${API_CONFIG.timeout}ms`);
-  
-  // Start the decision update schedule with a slight delay
-  setTimeout(scheduleDecisionUpdate, 5000);
 }); 

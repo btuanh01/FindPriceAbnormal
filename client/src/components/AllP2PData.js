@@ -420,35 +420,132 @@ const AllP2PData = () => {
     }).format(value);
   };
 
+  // LocalStorage keys
+  const STORAGE_KEYS = {
+    SPREAD_BUY: 'p2p_spread_buy',
+    FORMATTED_SPREAD_BUY: 'p2p_formatted_spread_buy',
+    APPLIED_SPREAD_BUY: 'p2p_applied_spread_buy',
+    APPLIED_FORMATTED_SPREAD_BUY: 'p2p_applied_formatted_spread_buy',
+    MIN_LIMIT: 'p2p_min_limit',
+    FORMATTED_MIN_LIMIT: 'p2p_formatted_min_limit',
+    APPLIED_MIN_LIMIT: 'p2p_applied_min_limit',
+    APPLIED_FORMATTED_MIN_LIMIT: 'p2p_applied_formatted_min_limit',
+    DISCORD_ENABLED: 'p2p_discord_enabled',
+    PREVIOUS_TOP1_MERCHANT: 'p2p_previous_top1_merchant',
+    CURRENT_TOP1_MERCHANT: 'p2p_current_top1_merchant'
+  };
+
+  // Function to save filter state to localStorage
+  const saveFilterState = (key, value) => {
+    try {
+      if (value === null || value === undefined) {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (error) {
+      console.warn('Failed to save filter state:', error);
+    }
+  };
+
+  // Function to load filter state from localStorage
+  const loadFilterState = (key, defaultValue = null) => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : defaultValue;
+    } catch (error) {
+      console.warn('Failed to load filter state:', error);
+      return defaultValue;
+    }
+  };
+
+  // Initialize states with localStorage values
   const [allP2PData, setAllP2PData] = useState({ buy: [], sell: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [nextRefresh, setNextRefresh] = useState(15);
-  // Removed filter-related state variables - no longer needed
-  const [spreadBuy, setSpreadBuy] = useState('100');
-  const [formattedSpreadBuy, setFormattedSpreadBuy] = useState('100');
-  const [appliedSpreadBuy, setAppliedSpreadBuy] = useState('100');
-  const [appliedFormattedSpreadBuy, setAppliedFormattedSpreadBuy] = useState('100');
   
-  // Min limit filter state
-  const [minLimit, setMinLimit] = useState('');
-  const [formattedMinLimit, setFormattedMinLimit] = useState('');
-  const [appliedMinLimit, setAppliedMinLimit] = useState('');
-  const [appliedFormattedMinLimit, setAppliedFormattedMinLimit] = useState('');
+  // Filter states with localStorage initialization
+  const [spreadBuy, setSpreadBuy] = useState(() => loadFilterState(STORAGE_KEYS.SPREAD_BUY, '100'));
+  const [formattedSpreadBuy, setFormattedSpreadBuy] = useState(() => loadFilterState(STORAGE_KEYS.FORMATTED_SPREAD_BUY, '100'));
+  const [appliedSpreadBuy, setAppliedSpreadBuy] = useState(() => loadFilterState(STORAGE_KEYS.APPLIED_SPREAD_BUY, '100'));
+  const [appliedFormattedSpreadBuy, setAppliedFormattedSpreadBuy] = useState(() => loadFilterState(STORAGE_KEYS.APPLIED_FORMATTED_SPREAD_BUY, '100'));
   
-  // Previous top 1 merchant from table for automatic comparison
-  const [previousTop1Merchant, setPreviousTop1Merchant] = useState(null);
-  const [currentTop1Merchant, setCurrentTop1Merchant] = useState(null);
+  // Min limit filter state with localStorage initialization
+  const [minLimit, setMinLimit] = useState(() => loadFilterState(STORAGE_KEYS.MIN_LIMIT, ''));
+  const [formattedMinLimit, setFormattedMinLimit] = useState(() => loadFilterState(STORAGE_KEYS.FORMATTED_MIN_LIMIT, ''));
+  const [appliedMinLimit, setAppliedMinLimit] = useState(() => loadFilterState(STORAGE_KEYS.APPLIED_MIN_LIMIT, ''));
+  const [appliedFormattedMinLimit, setAppliedFormattedMinLimit] = useState(() => loadFilterState(STORAGE_KEYS.APPLIED_FORMATTED_MIN_LIMIT, ''));
   
-  // Discord webhook states
+  // Previous top 1 merchant from table for automatic comparison with localStorage
+  const [previousTop1Merchant, setPreviousTop1Merchant] = useState(() => loadFilterState(STORAGE_KEYS.PREVIOUS_TOP1_MERCHANT, null));
+  const [currentTop1Merchant, setCurrentTop1Merchant] = useState(() => loadFilterState(STORAGE_KEYS.CURRENT_TOP1_MERCHANT, null));
+  
+  // Discord webhook states with localStorage initialization
   const [lastNotificationTime, setLastNotificationTime] = useState(0);
   const [notifiedPrices, setNotifiedPrices] = useState(new Set());
-  const [discordEnabled, setDiscordEnabled] = useState(false);
+  const [discordEnabled, setDiscordEnabled] = useState(() => loadFilterState(STORAGE_KEYS.DISCORD_ENABLED, false));
   const [lastRefreshTime, setLastRefreshTime] = useState(null);
 
   // Fixed values for asset and fiat
   const asset = 'USDT';
   const fiat = 'VND';
+
+  // Enhanced state setters that also save to localStorage
+  const setSpreadBuyWithStorage = (value) => {
+    setSpreadBuy(value);
+    saveFilterState(STORAGE_KEYS.SPREAD_BUY, value);
+  };
+
+  const setFormattedSpreadBuyWithStorage = (value) => {
+    setFormattedSpreadBuy(value);
+    saveFilterState(STORAGE_KEYS.FORMATTED_SPREAD_BUY, value);
+  };
+
+  const setAppliedSpreadBuyWithStorage = (value) => {
+    setAppliedSpreadBuy(value);
+    saveFilterState(STORAGE_KEYS.APPLIED_SPREAD_BUY, value);
+  };
+
+  const setAppliedFormattedSpreadBuyWithStorage = (value) => {
+    setAppliedFormattedSpreadBuy(value);
+    saveFilterState(STORAGE_KEYS.APPLIED_FORMATTED_SPREAD_BUY, value);
+  };
+
+  const setMinLimitWithStorage = (value) => {
+    setMinLimit(value);
+    saveFilterState(STORAGE_KEYS.MIN_LIMIT, value);
+  };
+
+  const setFormattedMinLimitWithStorage = (value) => {
+    setFormattedMinLimit(value);
+    saveFilterState(STORAGE_KEYS.FORMATTED_MIN_LIMIT, value);
+  };
+
+  const setAppliedMinLimitWithStorage = (value) => {
+    setAppliedMinLimit(value);
+    saveFilterState(STORAGE_KEYS.APPLIED_MIN_LIMIT, value);
+  };
+
+  const setAppliedFormattedMinLimitWithStorage = (value) => {
+    setAppliedFormattedMinLimit(value);
+    saveFilterState(STORAGE_KEYS.APPLIED_FORMATTED_MIN_LIMIT, value);
+  };
+
+  const setPreviousTop1MerchantWithStorage = (value) => {
+    setPreviousTop1Merchant(value);
+    saveFilterState(STORAGE_KEYS.PREVIOUS_TOP1_MERCHANT, value);
+  };
+
+  const setCurrentTop1MerchantWithStorage = (value) => {
+    setCurrentTop1Merchant(value);
+    saveFilterState(STORAGE_KEYS.CURRENT_TOP1_MERCHANT, value);
+  };
+
+  const setDiscordEnabledWithStorage = (value) => {
+    setDiscordEnabled(value);
+    saveFilterState(STORAGE_KEYS.DISCORD_ENABLED, value);
+  };
 
   // Define fetchAllP2PData before using it in useEffect
   const fetchAllP2PData = useCallback(async (skipLoading = false) => {
@@ -556,28 +653,28 @@ const AllP2PData = () => {
     const numericValue = inputValue.replace(/[^0-9]/g, '');
     
     // Update the state variables
-    setSpreadBuy(numericValue);
-    setFormattedSpreadBuy(formatInputAsVND(numericValue));
+    setSpreadBuyWithStorage(numericValue);
+    setFormattedSpreadBuyWithStorage(formatInputAsVND(numericValue));
   };
 
   // Function to apply the spread buy filter
   const applySpreadBuyFilter = () => {
-    setAppliedSpreadBuy(spreadBuy);
-    setAppliedFormattedSpreadBuy(formattedSpreadBuy);
+    setAppliedSpreadBuyWithStorage(spreadBuy);
+    setAppliedFormattedSpreadBuyWithStorage(formattedSpreadBuy);
   };
 
   // Function to handle min limit change
   const handleMinLimitChange = (e) => {
     const inputValue = e.target.value;
     const numericValue = inputValue.replace(/[^0-9]/g, '');
-    setMinLimit(numericValue);
-    setFormattedMinLimit(formatInputAsVND(numericValue));
+    setMinLimitWithStorage(numericValue);
+    setFormattedMinLimitWithStorage(formatInputAsVND(numericValue));
   };
 
   // Function to apply the min limit filter
   const applyMinLimitFilter = () => {
-    setAppliedMinLimit(minLimit);
-    setAppliedFormattedMinLimit(formattedMinLimit);
+    setAppliedMinLimitWithStorage(minLimit);
+    setAppliedFormattedMinLimitWithStorage(formattedMinLimit);
   };
 
   // Update top 1 merchant from data when data changes (after each refresh)
@@ -599,29 +696,29 @@ const AllP2PData = () => {
         
         // Always store current as previous on refresh, then update current
         if (currentTop1Merchant !== null) {
-          setPreviousTop1Merchant(currentTop1Merchant);
+          setPreviousTop1MerchantWithStorage(currentTop1Merchant);
           console.log('Previous top 1 merchant set to:', currentTop1Merchant);
         }
         
-        setCurrentTop1Merchant(newTop1Merchant);
+        setCurrentTop1MerchantWithStorage(newTop1Merchant);
       }
     }
   }, [allP2PData.buy, allP2PData.timestamp]);
 
   // Function to clear stored merchants and reset
   const clearStoredMerchants = () => {
-    setPreviousTop1Merchant(null);
-    setCurrentTop1Merchant(null);
-    setSpreadBuy('100');
-    setFormattedSpreadBuy('100');
-    setMinLimit('');
-    setFormattedMinLimit('');
-    setAppliedSpreadBuy('100');
-    setAppliedFormattedSpreadBuy('100');
-    setAppliedMinLimit('');
-    setAppliedFormattedMinLimit('');
+    setPreviousTop1MerchantWithStorage(null);
+    setCurrentTop1MerchantWithStorage(null);
+    setSpreadBuyWithStorage('100');
+    setFormattedSpreadBuyWithStorage('100');
+    setMinLimitWithStorage('');
+    setFormattedMinLimitWithStorage('');
+    setAppliedSpreadBuyWithStorage('100');
+    setAppliedFormattedSpreadBuyWithStorage('100');
+    setAppliedMinLimitWithStorage('');
+    setAppliedFormattedMinLimitWithStorage('');
     setNotifiedPrices(new Set()); // Clear notification history
-    setDiscordEnabled(false); // Disable Discord when clearing
+    setDiscordEnabledWithStorage(false); // Disable Discord when clearing
     console.log('Stored merchants and filters cleared');
   };
 
@@ -896,8 +993,8 @@ const AllP2PData = () => {
   useEffect(() => {
     // Initialize applied spread values
     if (!appliedSpreadBuy) {
-      setAppliedSpreadBuy('100');
-      setAppliedFormattedSpreadBuy('100');
+      setAppliedSpreadBuyWithStorage('100');
+      setAppliedFormattedSpreadBuyWithStorage('100');
     }
     
     // Initial data fetch - parallel for maximum speed
@@ -1397,7 +1494,7 @@ const AllP2PData = () => {
 
                 {/* Second Row - Clear Button */}
                 <Row className="mb-3 compact-filter-row">
-                  <Col md={12}>
+                  <Col md={8}>
                     <Button 
                       variant="outline-danger" 
                       onClick={clearStoredMerchants}
@@ -1408,6 +1505,18 @@ const AllP2PData = () => {
                       <i className="bi bi-x-circle me-2"></i>
                       Reset All Filters
                     </Button>
+                  </Col>
+                  <Col md={4}>
+                    <div className="d-flex align-items-center justify-content-end">
+                      <Badge bg="success" className="me-2">
+                        <i className="bi bi-check-circle me-1"></i>
+                        Filters Auto-Saved
+                      </Badge>
+                      <small className="text-muted">
+                        <i className="bi bi-info-circle me-1"></i>
+                        Settings persist on refresh
+                      </small>
+                    </div>
                   </Col>
                 </Row>
 
@@ -1443,7 +1552,7 @@ const AllP2PData = () => {
                             type="switch"
                             id="discord-toggle"
                             checked={discordEnabled}
-                            onChange={(e) => setDiscordEnabled(e.target.checked)}
+                            onChange={(e) => setDiscordEnabledWithStorage(e.target.checked)}
                             className="discord-toggle"
                           />
                         </div>
