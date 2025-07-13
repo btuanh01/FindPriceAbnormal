@@ -1,8 +1,9 @@
 import React from 'react';
-import { Container, Badge } from 'react-bootstrap';
+import { Container, Badge, Nav, Tab } from 'react-bootstrap';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './App.css';
 import AllP2PData from './components/AllP2PData';
+import BuySellComparison from './components/BuySellComparison';
 
 function App() {
   return (
@@ -20,8 +21,31 @@ function App() {
         </p>
       </header>
 
-      <AllP2PData />
-      
+      <Tab.Container id="dashboard-tabs" defaultActiveKey="p2p-data">
+        <Nav variant="tabs" className="mb-4">
+          <Nav.Item>
+            <Nav.Link eventKey="p2p-data">
+              <i className="bi bi-table me-2"></i>
+              Dữ liệu P2P
+            </Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="buy-sell-comparison">
+              <i className="bi bi-arrow-left-right me-2"></i>
+              So sánh Mua/Bán
+            </Nav.Link>
+          </Nav.Item>
+        </Nav>
+        
+        <Tab.Content>
+          <Tab.Pane eventKey="p2p-data">
+            <AllP2PData />
+          </Tab.Pane>
+          <Tab.Pane eventKey="buy-sell-comparison">
+            <BuySellComparison />
+          </Tab.Pane>
+        </Tab.Content>
+      </Tab.Container>
     </Container>
   );
 }
