@@ -1190,17 +1190,16 @@ const AllP2PData = () => {
       return (
         <div className="alert alert-danger" role="alert">
           <i className="bi bi-exclamation-triangle-fill me-2"></i>
-          Error: {error}
+          Lỗi: {error}
         </div>
       );
     }
 
     if (!filteredData || filteredData.length === 0) {
-      // General no data message
       return (
         <div className="alert alert-info" role="alert">
           <i className="bi bi-info-circle-fill me-2"></i>
-          No data available
+          Không có dữ liệu
         </div>
       );
     }
@@ -1210,13 +1209,13 @@ const AllP2PData = () => {
         <Table bordered hover className="p2p-table">
           <thead>
             <tr>
-              <th>Merchant</th>
-              <th>Price</th>
-              <th>Limits</th>
-              <th>Available</th>
-              <th>Payment Methods</th>
-              <th>Orders</th>
-              <th>Action</th>
+              <th>Người Bán</th>
+              <th>Giá</th>
+              <th>Giới Hạn</th>
+              <th>Khả Dụng</th>
+              <th>Phương Thức Thanh Toán</th>
+              <th>Đơn Hàng</th>
+              <th>Hành Động</th>
             </tr>
           </thead>
           <tbody>
@@ -1274,7 +1273,7 @@ const AllP2PData = () => {
                       rel="noopener noreferrer"
                     >
                       <i className="bi bi-box-arrow-up-right me-1"></i>
-                      Go to Binance
+                      Đến Binance
                     </Button>
                   </td>
                 </tr>
@@ -1295,20 +1294,20 @@ const AllP2PData = () => {
             <div>
               <h4 className="mb-0 d-flex align-items-center">
                 <i className="bi bi-lightning-fill me-2 text-warning"></i>
-                Top 20 USDT/VND P2P Data (Ultra-Fast)
+                Dữ Liệu P2P USDT/VND Top 20 (Siêu Nhanh)
               </h4>
               <small className="text-muted mt-1">
-                Showing top 20 lowest buy prices - optimized for speed (1 API call)
+                Hiển thị 20 giá mua thấp nhất - tối ưu hóa cho tốc độ (1 lần gọi API)
               </small>
             </div>
             
             <div className="d-flex flex-column align-items-end">
               <Badge bg="success" className="text-white px-3 py-2 auto-refresh-badge mb-2">
                 <i className="bi bi-lightning-fill me-1"></i>
-                Ultra-fast refresh in <span className="fw-bold">{nextRefresh}</span>s
+                Làm mới siêu nhanh trong <span className="fw-bold">{nextRefresh}</span>s
                 {lastRefreshTime && (
                   <div className="small mt-1 opacity-75">
-                    Last refresh: {lastRefreshTime}
+                    Lần làm mới cuối: {lastRefreshTime}
                   </div>
                 )}
               </Badge>
@@ -1318,7 +1317,7 @@ const AllP2PData = () => {
                   className="text-white px-3 py-2 auto-refresh-badge"
                 >
                   <i className="bi bi-discord me-1"></i>
-                  {discordEnabled ? "Price Monitoring Active" : "Price Monitoring Ready"}
+                  {discordEnabled ? "Giám Sát Giá Đang Hoạt Động" : "Giám Sát Giá Sẵn Sàng"}
                 </Badge>
               )}
             </div>
@@ -1329,7 +1328,7 @@ const AllP2PData = () => {
               <Card.Body className="p-4">
                 <h5 className="filter-section-title mb-3">
                   <i className="bi bi-funnel-fill me-2"></i>
-                  Filter Options
+                  Tùy Chọn Lọc
                 </h5>
                 
                 {/* First Row - Merchant Monitoring and Refresh */}
@@ -1338,11 +1337,11 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-clock-history me-2 text-info"></i>
-                        <span>Previous Top 1 Merchant</span>
+                        <span>Người Bán Top 1 Trước Đó</span>
                       </Form.Label>
                       <div className="d-flex flex-column align-items-center justify-content-center p-2 bg-light rounded">
                         <strong className="text-info text-center">
-                          {previousTop1Merchant ? previousTop1Merchant.name : 'Waiting for merchants...'}
+                          {previousTop1Merchant ? previousTop1Merchant.name : 'Đang chờ người bán...'}
                         </strong>
                         {previousTop1Merchant && (
                           <small className="text-muted">
@@ -1357,11 +1356,11 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-arrow-down-circle me-2 text-success"></i>
-                        <span>Current Top 1 Merchant</span>
+                        <span>Người Bán Top 1 Hiện Tại</span>
                       </Form.Label>
                       <div className="d-flex flex-column align-items-center justify-content-center p-2 bg-light rounded">
                         <strong className="text-success text-center">
-                          {currentTop1Merchant ? currentTop1Merchant.name : 'Loading merchants...'}
+                          {currentTop1Merchant ? currentTop1Merchant.name : 'Đang tải người bán...'}
                         </strong>
                         {currentTop1Merchant && (
                           <small className="text-muted">
@@ -1376,7 +1375,7 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-rulers me-2 text-warning"></i>
-                        <span>Alert Spread</span>
+                        <span>Chênh Lệch Cảnh Báo</span>
                       </Form.Label>
                       <div className="input-group filter-input-group">
                         <span className="input-group-text filter-currency-symbol">₫</span>
@@ -1399,7 +1398,7 @@ const AllP2PData = () => {
                           onClick={applySpreadBuyFilter}
                           disabled={loading || !spreadBuy}
                           className="filter-search-btn"
-                          title="Apply Spread"
+                          title="Áp dụng Chênh Lệch"
                         >
                           <i className="bi bi-check-circle"></i>
                         </Button>
@@ -1408,7 +1407,7 @@ const AllP2PData = () => {
                         <div className="mt-2">
                           <Badge bg="success" className="spread-badge">
                             <i className="bi bi-check-circle me-1"></i>
-                            <span className="me-1">Applied spread:</span> 
+                            <span className="me-1">Chênh lệch đã áp dụng:</span> 
                             <span className="fw-bold">₫{appliedFormattedSpreadBuy}</span>
                           </Badge>
                         </div>
@@ -1419,14 +1418,14 @@ const AllP2PData = () => {
                   <Col md={2}>
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
-                        <i className="bi bi-bar-chart me-2 text-primary"></i>
-                        <span>Min Limit</span>
+                        <i className="bi bi-currency-exchange me-2 text-info"></i>
+                        <span>Giới Hạn Tối Thiểu</span>
                       </Form.Label>
                       <div className="input-group filter-input-group">
                         <span className="input-group-text filter-currency-symbol">₫</span>
                         <Form.Control
                           type="text"
-                          placeholder="All limits"
+                          placeholder="Tất cả giới hạn"
                           value={formattedMinLimit}
                           onChange={handleMinLimitChange}
                           disabled={loading}
@@ -1443,7 +1442,7 @@ const AllP2PData = () => {
                           onClick={applyMinLimitFilter}
                           disabled={loading}
                           className="filter-search-btn"
-                          title="Apply Min Limit Filter"
+                          title="Áp dụng Bộ Lọc Giới Hạn Tối Thiểu"
                         >
                           <i className="bi bi-check-circle"></i>
                         </Button>
@@ -1452,7 +1451,7 @@ const AllP2PData = () => {
                         <div className="mt-2">
                           <Badge bg="info" className="spread-badge">
                             <i className="bi bi-check-circle me-1"></i>
-                            <span className="me-1">Min limit:</span> 
+                            <span className="me-1">Giới hạn tối thiểu:</span> 
                             <span className="fw-bold">₫{appliedFormattedMinLimit}</span>
                           </Badge>
                         </div>
@@ -1461,7 +1460,7 @@ const AllP2PData = () => {
                         <div className="mt-2">
                           <Badge bg="secondary" className="spread-badge">
                             <i className="bi bi-info-circle me-1"></i>
-                            <span>All limits (no filter)</span>
+                            <span>Tất cả giới hạn (không lọc)</span>
                           </Badge>
                         </div>
                       )}
@@ -1472,7 +1471,7 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-arrow-clockwise me-1 text-primary"></i>
-                        <span>Refresh</span>
+                        <span>Làm Mới</span>
                       </Form.Label>
                       <Button 
                         variant="primary" 
@@ -1480,7 +1479,7 @@ const AllP2PData = () => {
                         disabled={loading}
                         className="w-100 filter-search-btn"
                         size="sm"
-                        title="Refresh Data"
+                        title="Làm mới dữ liệu"
                       >
                         {loading ? (
                           <Spinner animation="border" size="sm" />
@@ -1500,21 +1499,21 @@ const AllP2PData = () => {
                       onClick={clearStoredMerchants}
                       disabled={loading}
                       className="filter-clear-btn"
-                      title="Reset all filters and merchant monitoring"
+                      title="Đặt lại tất cả bộ lọc và theo dõi người bán"
                     >
                       <i className="bi bi-x-circle me-2"></i>
-                      Reset All Filters
+                      Đặt Lại Tất Cả Bộ Lọc
                     </Button>
                   </Col>
                   <Col md={4}>
                     <div className="d-flex align-items-center justify-content-end">
                       <Badge bg="success" className="me-2">
                         <i className="bi bi-check-circle me-1"></i>
-                        Filters Auto-Saved
+                        Bộ Lọc Tự Động Lưu
                       </Badge>
                       <small className="text-muted">
                         <i className="bi bi-info-circle me-1"></i>
-                        Settings persist on refresh
+                        Cài đặt được giữ khi làm mới
                       </small>
                     </div>
                   </Col>
@@ -1526,11 +1525,11 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-eye me-2 text-primary"></i>
-                        <span>Active View</span>
+                        <span>Chế Độ Xem Hiện Tại</span>
                       </Form.Label>
                       <div className="d-flex align-items-center justify-content-center p-2 bg-primary text-white rounded">
                         <i className="bi bi-cart me-2"></i>
-                        <strong>Buy Orders (Merchants Monitored)</strong>
+                        <strong>Lệnh Mua (Giám Sát Người Bán)</strong>
                       </div>
                     </Form.Group>
                   </Col>
@@ -1538,7 +1537,7 @@ const AllP2PData = () => {
                     <Form.Group className="mb-3">
                       <Form.Label className="d-flex align-items-center">
                         <i className="bi bi-discord me-2 text-primary"></i>
-                        <span>Discord Alerts (All Listings)</span>
+                        <span>Thông Báo Discord (Tất Cả Danh Sách)</span>
                       </Form.Label>
                       <div className="d-flex flex-column p-2 bg-light rounded">
                         <div className="d-flex align-items-center justify-content-between mb-1">
@@ -1546,7 +1545,7 @@ const AllP2PData = () => {
                             bg={discordEnabled ? "success" : "danger"} 
                             className="me-2"
                           >
-                            {discordEnabled ? "ON" : "OFF"}
+                            {discordEnabled ? "BẬT" : "TẮT"}
                           </Badge>
                           <Form.Check 
                             type="switch"
@@ -1562,33 +1561,33 @@ const AllP2PData = () => {
                             size="sm"
                             onClick={testDiscordWebhook}
                             className="flex-grow-1"
-                            title="Test Discord webhook"
+                            title="Kiểm tra webhook Discord"
                           >
                             <i className="bi bi-send me-1"></i>
-                            Test Discord
+                            Kiểm tra Discord
                           </Button>
                           <Button
                             variant="outline-info"
                             size="sm"
                             onClick={debugHighlightingLogic}
                             className="flex-grow-1"
-                            title="Debug highlighting logic"
+                            title="Gỡ lỗi logic nhấn màu"
                           >
                             <i className="bi bi-bug me-1"></i>
-                            Debug
+                            Gỡ lỗi
                           </Button>
                         </div>
                         {discordEnabled && (
                           <small className="text-muted mt-2">
                             {previousTop1Merchant ? 
-                              `Monitoring vs ${previousTop1Merchant.name}` : 
-                              'Waiting for previous top 1 merchant...'}
+                              `Theo dõi vs ${previousTop1Merchant.name}` : 
+                              'Đang chờ người bán top 1 trước...'}
                           </small>
                         )}
                         {discordEnabled && !previousTop1Merchant && (
                           <small className="text-warning mt-2">
                             <i className="bi bi-exclamation-triangle me-1"></i>
-                            Need 2 refreshes to start monitoring
+                            Cần 2 lần làm mới để bắt đầu theo dõi
                           </small>
                         )}
                       </div>
@@ -1606,10 +1605,10 @@ const AllP2PData = () => {
             <div>
               {!loading && allP2PData.timestamp && (
                 <small className="text-muted">
-                  Last updated: {new Date(allP2PData.timestamp).toLocaleString()}
+                  Cập nhật lần cuối: {new Date(allP2PData.timestamp).toLocaleString()}
                   {allP2PData.metadata && (
                     <span className="ms-2">
-                      • Showing Buy Orders: {allP2PData.buy.length} of top 20 lowest buy prices
+                      • Hiển thị Lệnh Mua: {allP2PData.buy.length} trong top 20 giá mua thấp nhất
                     </span>
                   )}
                   {allP2PData.metadata?.limitInfo && (
