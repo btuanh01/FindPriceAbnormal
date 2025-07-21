@@ -145,7 +145,7 @@ const BuySellComparison = () => {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
         <Spinner animation="border" role="status" variant="primary">
-          <span className="visually-hidden">Loading...</span>
+          <span className="visually-hidden">Đang tải...</span>
         </Spinner>
       </div>
     );
